@@ -13,7 +13,7 @@ Dans une architecture native, AriaML remplace la structure HTML traditionnelle. 
     [{
         "@context": "[https://ariaml.org/ns#](https://ariaml.org/ns#)",
         "@type": "PageProperties",
-        "metadatas": [{ "name": "title", "content": "Accueil" }],
+        "metadatas": {"title": { "name": "title", "content": "Accueil" }},
     }]
     </script>
 	<script type="application/appearance+json" slot="appearance">
@@ -99,7 +99,7 @@ Dès qu'une propriété de l'objet est modifiée, le moteur AriaML répercute le
 
 ```javascript
 // Le titre passe instantanément de "Accueil" à "Tableau de bord"
-PageProperties.metadatas.find(m => m.name === 'title').content = "Tableau de bord";
+PageProperties.metadatas.title.content = "Tableau de bord";
 
 // Modifie la couleur de la barre d'adresse/interface du navigateur
 Appearance.defaultBrowserColor = "#2c3e50";
