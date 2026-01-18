@@ -169,29 +169,30 @@ Un fragment AriaML est une extension partielle du document. Il permet de mettre 
 Pour garantir l'intégrité du standard, un fragment doit intégrer sa propre logique de sécurité. S'il est consulté en dehors d'un contexte de document complet, il doit forcer le navigateur à restaurer le document racine.
 
 
+```html
+<meta http-equiv="refresh" content="0;url=./">
 
-    <meta http-equiv="refresh" content="0;url=./">
-    
-    <style>aria-ml .aria-ml-fallback {display: none;}</style>
-    
-    <div class="aria-ml-fallback">
-        Chargement du document...
-    </div>
-    
-    <aria-ml-fragment>
-        <script type="application/ld+json">
-        [{
-            "@context": "[https://ariaml.org/ns#](https://ariaml.org/ns#)",
-            "@type": "PageProperties",
-            "metadatas": [{ "name": "title", "content": "Nouveau Titre du Document" }]
-        }]
-        </script>
-    
-        <main slot="main">
-            <h1>Mutation du document</h1>
-            <p>Ce contenu est injecté dynamiquement.</p>
-        </main>
-    </aria-ml-fragment>
+<style>aria-ml .aria-ml-fallback {display: none;}</style>
+
+<div class="aria-ml-fallback">
+	Chargement du document...
+</div>
+
+<aria-ml-fragment>
+	<script type="application/ld+json">
+	[{
+		"@context": "[https://ariaml.org/ns#](https://ariaml.org/ns#)",
+		"@type": "PageProperties",
+		"metadatas": [{ "name": "title", "content": "Nouveau Titre du Document" }]
+	}]
+	</script>
+
+	<main slot="main">
+		<h1>Mutation du document</h1>
+		<p>Ce contenu est injecté dynamiquement.</p>
+	</main>
+</aria-ml-fragment>
+```
 
 ---
 
