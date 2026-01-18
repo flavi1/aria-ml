@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>AriaML - Gestion du Consentement</title>
+    <style>
+        :root {
+            --primary: #007bff;
+            --text: #333;
+            --bg: #fff;
+            --border: #ddd;
+            --warning: #fff3cd;
+            --danger: #f8d7da;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            color: var(--text);
+            background: var(--bg);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+        header { border-bottom: 2px solid var(--border); padding-bottom: 10px; margin-bottom: 20px; }
+        h1 { font-size: 1.2rem; margin: 0; }
+        h2 { font-size: 1rem; color: #666; margin-top: 20px; border-left: 3px solid var(--primary); padding-left: 10px; }
+        
+        #aria-consent-form { flex-grow: 1; overflow-y: auto; }
+        
+        .field-row {
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            margin-bottom: 10px;
+            transition: background 0.2s;
+        }
+        .field-row:hover { background: #f9f9f9; }
+        .field-row.warning { background: var(--warning); border-color: #ffeeba; }
+        
+        label { display: flex; align-items: center; cursor: pointer; font-weight: bold; }
+        input[type="checkbox"] { margin-right: 10px; width: 18px; height: 18px; }
+        
+        .reason { font-size: 0.9rem; margin: 5px 0 0 28px; color: #555; }
+        .badge { font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; margin-left: 10px; text-transform: uppercase; }
+        .badge.required { background: #e2e3e5; color: #383d41; }
+        
+        .alert { font-size: 0.8rem; color: #721c24; margin: 5px 0 0 28px; font-weight: bold; }
+
+        footer {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .persist-control { font-size: 0.9rem; display: flex; align-items: center; }
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover { filter: brightness(0.9); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Autorisations du document</h1>
+    </header>
+
+    <form id="aria-consent-form">
+        <div id="languages-section">
+            </div>
+
+        <div id="scopes-section">
+            </div>
+
+        <footer>
+            <div class="persist-control">
+                <input type="checkbox" id="persist-choice" checked>
+                <label for="persist-choice">Se souvenir de mes choix</label>
+            </div>
+            <button type="submit">Valider et continuer</button>
+        </footer>
+    </form>
+
+    <script src="consent-ui-logic.js"></script>
+</body>
+</html>
