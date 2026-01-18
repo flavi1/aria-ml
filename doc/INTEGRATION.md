@@ -9,17 +9,24 @@ Dans une architecture native, AriaML remplace la structure HTML traditionnelle. 
 ```html
 <!DOCTYPE aria-ml>
 <aria-ml lang="fr">
-    <script type="application/ld+json">
+    <script type="application/ld+json" slot="definition">
     [{
         "@context": "[https://ariaml.org/ns#](https://ariaml.org/ns#)",
         "@type": "PageProperties",
         "metadatas": [{ "name": "title", "content": "Accueil" }],
-        "appearance": {
-            "assets": [{ "rel": "stylesheet", "href": "base.css" }]
-        }
     }]
     </script>
-
+	<script type="application/appearance+json" slot="appearance">
+	{
+		"defaultBrowserColor": "red",
+		"defaultViewport": "width=device-width, initial-scale=1",
+		"assets": [
+			{ "rel": "shortcut icon", "href": "/favicon.ico" },
+			{ "rel": "stylesheet", "href": "persistant1.css" },
+			{ "rel": "stylesheet", "media": "(min-width: 1000px)", "href": "persistant-big-sreen.css" }
+		]
+	}
+	</script>
     <main slot="main">
         <h1>Contenu natif</h1>
     </main>
@@ -39,9 +46,11 @@ Pour les environnements web actuels, AriaML s'intègre via un polyfill unique. L
 </head>
 <body>
     <aria-ml>
-        <script type="application/ld+json"> ... </script>
-        
+
+        <script type="application/ld+json" slot="definition"> ... </script>
+        <script type="application/appearance+json" slot="appearance"> ... </script>
         <main slot="main">...</main>
+
     </aria-ml>
 </body>
 </html>
@@ -93,7 +102,7 @@ Dès qu'une propriété de l'objet est modifiée, le moteur AriaML répercute le
 PageProperties.metadatas.find(m => m.name === 'title').content = "Tableau de bord";
 
 // Modifie la couleur de la barre d'adresse/interface du navigateur
-PageProperties.appearance.defaultBrowserColor = "#2c3e50";
+Appearance.defaultBrowserColor = "#2c3e50";
 ```
 
 ---
@@ -105,29 +114,38 @@ Le `ThemeManager` est le module responsable de l'interprétation visuelle. Il ut
 ### **Exemple de configuration riche**
 
 ```json
-{
-  "@type": "PageProperties",
-  "appearance": {
-    "defaultBrowserColor": "#ffffff",
-    "defaultTheme": "ThemeClair",
-    "themeList": {
-      "ThemeClair": {
-        "media": "(prefers-color-scheme: light)",
-        "browserColor": "#f8f9fa",
-        "assets": [
-          { "rel": "stylesheet", "href": "light-mode.css" }
-        ]
-      },
-      "ThemeSombre": {
-        "media": "(prefers-color-scheme: dark)",
-        "browserColor": "#1a1a1a",
-        "assets": [
-          { "rel": "stylesheet", "href": "dark-mode.css" }
-        ]
-      }
-    }
-  }
-}
+	{
+		"defaultBrowserColor": "red",
+		"defaultViewport": "width=device-width, initial-scale=2",
+		"assets": [
+			{ "rel": "icon", "type": "image/png", "sizes": "32x32", "href": "/favicon-32x32.png" },
+			{ "rel": "apple-touch-icon", "sizes": "180x180", "href": "/apple-touch-icon.png" },
+			{ "rel": "shortcut icon", "href": "/favicon.ico" },
+			{ "rel": "stylesheet", "href": "persistant1.css" },
+			{ "rel": "stylesheet", "href": "persistant2.css" },
+			{ "rel": "stylesheet", "media": "(min-width: 1000px)", "href": "persistant-big-sreen.css" }
+		],
+		"defaultTheme": "ThemeClair",
+		"themeList": {
+			"ThemeClair": {
+				"media": "(prefers-color-scheme: light)",
+				"browserColor": "green",
+				"assets": [
+					{ "rel": "stylesheet", "href": "clair.css" },
+					{ "rel": "stylesheet", "media": "(min-width: 1000px)", "href": "big-sreen.css" }
+				]
+			},
+			"ThemeSombre": {
+				"media": "(prefers-color-scheme: dark)",
+				"browserColor": "#ccc",
+				"viewport": "width=device-width, initial-scale=1",
+				"assets": [
+					{ "rel": "stylesheet", "href": "sombre.css" },
+					{ "rel": "stylesheet", "media": "(min-width: 1000px)", "href": "big-sreen-dark.css" }
+				]
+			}
+		}
+	}
 ```
 
 ### **Logique de Résolution Stricte**
