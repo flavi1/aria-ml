@@ -32,22 +32,22 @@ Le standard utilise une syntaxe CSS-like simplifiée. Les propriétés sont auto
 
 
 ```css
-	/* Exemple : navigation.bhv */
-	[role="menuitem"] {
-		rel-panel: (next) [role="menu"];
-		on-click: toggle(panel@hidden);
-	}
+/* Exemple : navigation.bhv */
+[role="menuitem"] {
+	rel-panel: (next) [role="menu"];
+	on-click: toggle(panel@hidden);
+}
 ```
 
 ### 3.2 Déclaration dans le document
 Le moteur privilégie la déclaration via des balises scripts typées pour une isolation optimale.
 
 ```html
-	<script type="text/behavior" src="ui-patterns.bhv"></script>
+<script type="text/behavior" src="ui-patterns.bhv"></script>
 
-	<script type="text/behavior">
-		[role="tab"] { on-click: focus(next); }
-	</script>
+<script type="text/behavior">
+	[role="tab"] { on-click: focus(next); }
+</script>
 ```
 
 ---
@@ -127,35 +127,35 @@ L'exécuteur `behaviorActions` traite les séquences de manière asynchrone via 
 ### 8.1 Détection de Support (Polyfill Natif)
 
 ```css
-	@supports not (element(<details>)) {
-		details {
-			rel-sum: "(self) summary";
-			rel-content: "(siblings) :not(summary)";
-			init: set(sum@role, "button") set(sum@tabindex, "0") set(content@hidden);
-		}
-		summary {
-			on-click: toggle(parent@open);
-		}
-		details[open] {
-			init: set(sum@aria-expanded, "true") rm(content@hidden);
-		}
+@supports not (element(<details>)) {
+	details {
+		rel-sum: "(self) summary";
+		rel-content: "(siblings) :not(summary)";
+		init: set(sum@role, "button") set(sum@tabindex, "0") set(content@hidden);
 	}
+	summary {
+		on-click: toggle(parent@open);
+	}
+	details[open] {
+		init: set(sum@aria-expanded, "true") rm(content@hidden);
+	}
+}
 ```
 
 ### 8.2 Pattern Tablist (Onglets)
 
 ```css
-	[role="tab"] {
-		rel-list: (closest: [role="tablist"]);
-		rel-panels: (root) [role="tabpanel"];
-		on-click: 
-			set(list.branch@aria-selected, "false") 
-			set(self@aria-selected, "true")
-			set(panels@hidden)
-			rm(root.#{{self@aria-controls}}@hidden);
-		kb-arrowright: focus(next);
-		kb-arrowleft: focus(prev);
-	}
+[role="tab"] {
+	rel-list: (closest: [role="tablist"]);
+	rel-panels: (root) [role="tabpanel"];
+	on-click: 
+		set(list.branch@aria-selected, "false") 
+		set(self@aria-selected, "true")
+		set(panels@hidden)
+		rm(root.#{{self@aria-controls}}@hidden);
+	kb-arrowright: focus(next);
+	kb-arrowleft: focus(prev);
+}
 ```
 
 ### 8.3 Adaptabilité Sémantique et Layout (Media Queries)
@@ -165,45 +165,45 @@ L'une des plus grandes forces d'AriaML est sa capacité à synchroniser l'ordre 
 #### Fichier : layout.css (Style) MAUVAISE METHODE
 
 ```css
-    /* Le CSS gère uniquement le rendu visuel */
-    .container {
-        display: flex;
-        flex-direction: column;
-    }
+/* Le CSS gère uniquement le rendu visuel */
+.container {
+	display: flex;
+	flex-direction: column;
+}
 
-    @media (min-width: 1024px) {
-        .container {
-            flex-direction: row;
-        }
-    }
+@media (min-width: 1024px) {
+	.container {
+		flex-direction: row;
+	}
+}
 ```
 
 #### Fichier : layout.bhv (Comportement AriaML) BONNE METHODE
 
 ```css
-    /* AriaML gère la cohérence du DOM et de l'Accessibilité */
-    .column-main { 
-        order: 1; 
-    }
+/* AriaML gère la cohérence du DOM et de l'Accessibilité */
+.column-main { 
+	order: 1; 
+}
 
-    .column-aside { 
-        order: 2; 
-    }
+.column-aside { 
+	order: 2; 
+}
 
-    @media (min-width: 1024px) {
-        .column-aside {
-            /* L'Aside passe physiquement en premier nœud du container */
-            order: 1; 
-            /* Mutation sémantique : devient un repère (landmark) sur Desktop */
-            role: complementary;
-            aria-label: "Navigation latérale";
-        }
-        
-        .column-main {
-            order: 2;
-            role: main;
-        }
-    }
+@media (min-width: 1024px) {
+	.column-aside {
+		/* L'Aside passe physiquement en premier nœud du container */
+		order: 1; 
+		/* Mutation sémantique : devient un repère (landmark) sur Desktop */
+		role: complementary;
+		aria-label: "Navigation latérale";
+	}
+	
+	.column-main {
+		order: 2;
+		role: main;
+	}
+}
 ```
 
 
