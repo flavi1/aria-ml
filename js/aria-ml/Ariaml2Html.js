@@ -21,11 +21,6 @@
         <html lang="fr">
         <head>
             <meta charset="UTF-8">
-            <title>AriaML Render</title>
-            <style>
-                /* Styles par défaut pour les balises AriaML */
-                aria-ml { display: block; }
-            </style>
         </head>
         <body>
             ${rawContent}
