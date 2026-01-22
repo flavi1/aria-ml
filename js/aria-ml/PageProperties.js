@@ -68,9 +68,9 @@
                 const style = document.createElement('style');
                 style.id = 'ariaml-default-style';
                 style.innerHTML = `
-                    :not(aria-ml) > [slot] {display: none !important;}
-                    html, body {margin: 0; padding: 0; height: 100%;}
-                    aria-ml {display: block; min-height: 100%; margin: 0; padding: 0; box-sizing: border-box;}`;
+:not(aria-ml) > [slot] { display: none !important; }
+html, body { margin: 0; padding: 0; height: 100%; }
+aria-ml { display: block; min-height: 100%; padding: 8px; box-sizing: border-box; }`;
                 document.head.prepend(style);
             }
         },
