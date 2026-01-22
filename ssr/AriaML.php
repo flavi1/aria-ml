@@ -34,14 +34,15 @@ class AriaML {
 html, body { margin: 0; padding: 0; height: 100%; }
 aria-ml { display: block; min-height: 100%; padding: 8px; box-sizing: border-box; }
 </style>';
+			$jsBase = 'https://flavi1.github.io/aria-ml/js/aria-ml/';
             $scripts = '
-<script src="js/aria-ml/RootNode.js"></script>
-<script src="js/aria-ml/PageProperties.js"></script>
-<script src="js/aria-ml/ThemeManager.js"></script>
-<script src="js/aria-ml/AppearanceManager.js"></script>
-<script src="js/aria-ml/Navigation.js"></script>
-<script src="js/aria-ml/Model.js"></script>
-<script src="js/aria-ml/Form.js"></script>';
+<script src="'.$jsBase.'/RootNode.js"></script>
+<script src="'.$jsBase.'/PageProperties.js"></script>
+<script src="'.$jsBase.'/ThemeManager.js"></script>
+<script src="'.$jsBase.'/AppearanceManager.js"></script>
+<script src="'.$jsBase.'/Navigation.js"></script>
+<script src="'.$jsBase.'/Model.js"></script>
+<script src="'.$jsBase.'/Form.js"></script>';
 
             if ($wantsAriaML) {
                 header('Content-Type: ' . ($testClient ? 'text/html' : 'text/aria-ml') . '; charset=utf-8');
