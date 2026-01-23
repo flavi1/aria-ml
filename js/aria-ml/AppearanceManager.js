@@ -93,8 +93,10 @@
                 const href = link.getAttribute('href');
                 const title = link.getAttribute('title');
                 let sel = `link[href="${href}"]`;
-                if (title) sel += `[title="${title}"]`;
-                if (!tracker.has(sel)) link.remove();
+                if (title) {
+                    sel += `[title="${title}"]`;
+                    if (!tracker.has(sel)) link.remove();
+                }
             });
         },
 
