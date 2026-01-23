@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "AriaML Engine",
     "version": "1.4",
-    "description": "Standard AriaML : Négociation et rendu natif sans blocage.",
+    "description": "Standard AriaML",
     "permissions": [
         "declarativeNetRequest",
         "scripting",
@@ -11,12 +11,6 @@
     "host_permissions": [
         "<all_urls>"
     ],
-	"web_accessible_resources": [
-		{
-		  "resources": ["converter.js"],
-		  "matches": ["<all_urls>"]
-		}
-	],
     "background": {
         "service_worker": "background.js",
         "scripts": ["background.js"]
