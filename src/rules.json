@@ -1,0 +1,20 @@
+[
+    {
+        "id": 1,
+        "priority": 1,
+        "action": {
+            "type": "modifyHeaders",
+            "requestHeaders": [
+                {
+                    "header": "Accept",
+                    "operation": "set",
+                    "value": "text/aria-ml, text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8"
+                }
+            ]
+        },
+        "condition": {
+            "urlFilter": "*",
+            "resourceTypes": ["main_frame", "sub_frame"]
+        }
+    }
+]
