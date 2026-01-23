@@ -21,32 +21,32 @@ class AriaML {
     /**
      * Méthode statique pour gérer le buffer et la négociation de contenu
      */
-    public static function handle($testClient = true) {
+    public static function handle($testClient = false) {
         $acceptHeader = $_SERVER['HTTP_ACCEPT'] ?? '';
         $wantsAriaML = ($testClient or (strpos($acceptHeader, 'text/aria-ml') !== false));
         
         ob_start();
         return function() use ($wantsAriaML, $testClient) {
             $document = ob_get_clean();
-            $styles = '
-<style>
-:not(aria-ml) > [slot] { display: none !important; }
-html, body { margin: 0; padding: 0; height: 100%; }
-aria-ml { display: block; min-height: 100%; padding: 8px; box-sizing: border-box; }
-</style>';
-			$jsBase = 'https://flavi1.github.io/aria-ml/js/aria-ml/';
-            $scripts = '
-<script src="'.$jsBase.'/RootNode.js"></script>
-<script src="'.$jsBase.'/PageProperties.js"></script>
-<script src="'.$jsBase.'/ThemeManager.js"></script>
-<script src="'.$jsBase.'/AppearanceManager.js"></script>
-<script src="'.$jsBase.'/Navigation.js"></script>
-<script src="'.$jsBase.'/Model.js"></script>
-<script src="'.$jsBase.'/Form.js"></script>';
-
+			
+			if(!$wantsAriaML or $testClient) {
+				$behavior = $styles = $scripts = '';
+				$polyfill_url = 'https://flavi1.github.io/aria-ml/js/aria-ml/';
+				$dist = json_decode(file_get_contents($polyfill_url.'dist.json'), true);
+				if(count($dist['js']))
+					foreach($dist['js'] as $src)
+						$scripts .= "\n	".'<script src="'.$polyfill_url.$src.'"></script>';
+				if(count($dist['css']))
+					foreach($dist['css'] as $href)
+						$styles .= "\n	".'<link rel="stylesheet" href="'.$polyfill_url.$href.'">';
+				if(count($dist['bhv']))
+					foreach($dist['bhv'] as $href)
+						$behavior .= "\n	".'<link rel="behavior" href="'.$polyfill_url.$href.'">';
+			}
+			
             if ($wantsAriaML) {
                 header('Content-Type: ' . ($testClient ? 'text/html' : 'text/aria-ml') . '; charset=utf-8');
-                echo ($testClient ? "<!-- TEST CLIENT ARIAML IMPLEMENTATION -->\n".$styles : "") . $document . ($testClient ? $scripts : "");
+                echo ($testClient ? "<!-- TEST CLIENT ARIAML IMPLEMENTATION -->\n" : '') . $document . ($testClient ? $scripts : "");
                 exit;
             }
 
@@ -54,14 +54,14 @@ aria-ml { display: block; min-height: 100%; padding: 8px; box-sizing: border-box
 ?>
 <!DOCTYPE html>
 <html <?php echo $aria->getHtmlAttributes(); ?>>
-<head data-ssr>
-    <meta charset="UTF-8">
-    <?php echo $styles; ?>
-    <?php echo $aria->renderHead(); ?>
+<head data-ssr><meta charset="UTF-8">
+    <?php echo $styles ?>
+    <?php echo $behavior; ?>
+    <?php echo "\n	".$aria->renderHead(); ?>
 </head>
 <body>
     <?php echo $document; ?>
-	<?php echo $scripts; ?>
+	<?php echo "\n".$scripts; ?>
 </body>
 </html>
 <?php
