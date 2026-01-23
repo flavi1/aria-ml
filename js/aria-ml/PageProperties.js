@@ -70,8 +70,8 @@
                 style.innerHTML = `
                     :not(aria-ml) > [slot] { display: none !important; }
                     html, body { margin: 0; padding: 0; height: 100%; }
-                    aria-ml { display: block; min-height: 100%; padding: 8px; box-sizing: border-box; background: white; color: green;}
-                    @media (prefers-color-scheme: dark) { aria-ml { background: black; color: red; } }`;
+                    aria-ml { display: block; min-height: 100%; padding: 8px; box-sizing: border-box; background: white; color: black;}
+                    @media (prefers-color-scheme: dark) { aria-ml { background: black; color: white; } }`;
                 document.head.prepend(style);
             }
         },
