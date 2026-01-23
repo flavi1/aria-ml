@@ -1,0 +1,18 @@
+{
+    "css": [
+        "init.css"
+    ],
+    "bhv": [
+        "init.bhv"
+    ],
+    "js": [
+        "js\/Ariaml2Html.js",
+        "js\/RootNode.js",
+        "js\/PageProperties.js",
+        "js\/ThemeManager.js",
+        "js\/AppearanceManager.js",
+        "js\/Navigation.js",
+        "js\/Model.js",
+        "js\/Form.js"
+    ]
+}
