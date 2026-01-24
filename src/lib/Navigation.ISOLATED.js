@@ -44,15 +44,15 @@ class AriaMLNavigation {
         return url.origin === this.baseUrl && !element.hasAttribute('download');
     }
 
-    async handleFormSubmit(form, submitter) {
+	async handleFormSubmit(form, submitter) {
         const options = await AriaMLForm.prepare(form, submitter);
         const url = new URL(options.action, window.location.origin);
 
-        // Protection Anti-Double-Post
         const buttons = form.querySelectorAll('button, input[type="submit"]');
         buttons.forEach(btn => btn.disabled = true);
 
         try {
+            // Utilisation de la méthode exposée
             if (options.target === '_slots') {
                 await this.navigate(url.toString(), true, options);
             } else {
@@ -83,14 +83,16 @@ class AriaMLNavigation {
         }
 
         // Sinon (PUT/PATCH/JSON), on utilise le Shadow Form avec les champs cachés de contournement
-        const sf = document.createElement('form');
+		const sf = document.createElement('form');
         sf.method = 'POST'; sf.action = url; sf.target = options.target;
 
         if (['PUT', 'PATCH', 'DELETE'].includes(options.method)) {
             const m = document.createElement('input'); m.type='hidden'; m.name='_method'; m.value=options.method; sf.appendChild(m);
         }
-        if (window.PageProperties?.CSRF) {
-            const c = document.createElement('input'); c.type='hidden'; c.name='_token'; c.value=window.PageProperties.CSRF; sf.appendChild(c);
+        
+        const csrf = window.PageProperties?.['csrf-token'];
+        if (csrf) {
+            const c = document.createElement('input'); c.type='hidden'; c.name='_token'; c.value=csrf; sf.appendChild(c);
         }
         if (options.enctype === 'application/json') {
             const j = document.createElement('input'); j.type='hidden'; j.name='_json'; j.value=options.body; sf.appendChild(j);
@@ -175,3 +177,8 @@ class AriaMLNavigation {
 		document.dispatchEvent(new CustomEvent('ariaml:navigated', { detail: { url } }));
 	}
 }
+
+// Initialisation automatique au chargement du script isolé
+window.NavigationManager = new AriaMLNavigation({ 
+    navigationBaseUrl: window.location.origin 
+});

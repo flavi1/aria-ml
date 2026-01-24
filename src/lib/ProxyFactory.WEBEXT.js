@@ -22,5 +22,6 @@
 
     window.ThemeManager = createManagerProxy('ThemeManager', ['setTheme', 'init']);
     window.AppearanceManager = createManagerProxy('AppearanceManager', ['render']);
+    window.NavigationManager = createManagerProxy('NavigationManager', ['navigate']);
 
 })();

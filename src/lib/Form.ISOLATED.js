@@ -11,12 +11,12 @@ class AriaMLForm {
 
         if (enctype === 'json') enctype = 'application/json';
 
-        const formData = new FormData(form);
+		const formData = new FormData(form);
         const headers = { 'Accept': 'text/aria-ml, text/html, application/xhtml+xml' };
         
-        // Jeton CSRF depuis les propriétés globales
-        if (window.PageProperties?.CSRF) {
-            headers['X-CSRF-TOKEN'] = window.PageProperties.CSRF;
+        const csrf = window.PageProperties?.['csrf-token'];
+        if (csrf) {
+            headers['X-CSRF-TOKEN'] = csrf;
         }
 
         let body;

@@ -26,8 +26,7 @@
                 "lib/Consent/ConsentBridge.js",
 
                 "lib/Model.js",
-                "lib/Form.js",
-                "lib/Navigation.js",
+
                 "lib/BehaviorManager/behaviorCore.js",
                 "lib/BehaviorManager/behaviorActions.js",
                 "lib/BehaviorManager/behaviorKeyboard.js",
@@ -46,7 +45,9 @@
 			"lib/PageProperties.ISOLATED.js",
 			"lib/PageProperties.js",
 			"lib/ThemeManager.ISOLATED.js",
-			"lib/AppearanceManager.ISOLATED.js"
+			"lib/AppearanceManager.ISOLATED.js",
+			"lib/Form.ISOLATED.js",
+			"lib/Navigation.ISOLATED.js",
 		],
 		"css": ["lib/css/init.css"],
 		"bhv": ["lib/bhv/init.bhv"]
