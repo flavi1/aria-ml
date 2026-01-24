@@ -29,7 +29,7 @@
         };
     }
 
-    if (!customElements.get('aria-ml')) {
+    if (customElements && !customElements.get('aria-ml')) {
         customElements.define('aria-ml', window.AriaMLElement);
     }
     

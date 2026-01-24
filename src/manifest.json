@@ -6,7 +6,8 @@
     "permissions": [
         "declarativeNetRequest",
         "scripting",
-        "webNavigation"
+        "webNavigation",
+        "storage"
     ],
     "host_permissions": [
         "<all_urls>"
@@ -15,6 +16,41 @@
         "service_worker": "background.js",
         "scripts": ["background.js"]
     },
+    "content_scripts": [
+        {
+            "matches": ["<all_urls>"],
+            "js": [
+                "lib/Consent/StorageWrapper.js",
+                "lib/Consent/SecurityObserver.js",
+                "lib/Consent/Arbitrator.js",
+                "lib/Consent/ConsentBridge.js",
+
+                "lib/Model.js",
+                "lib/Form.js",
+                "lib/Navigation.js",
+                "lib/BehaviorManager/behaviorCore.js",
+                "lib/BehaviorManager/behaviorActions.js",
+                "lib/BehaviorManager/behaviorKeyboard.js",
+                "lib/BehaviorManager/behaviorResolvers.js"
+            ],
+            "run_at": "document_start",
+            "all_frames": true,
+            "match_about_blank": true
+        }
+    ],
+    "ariaml_ressources": {
+		"js": [
+			"lib/Bridge.WEBEXT.ISOLATED.js"
+			"lib/ProxyFactory.WEBEXT.js"
+			"lib/RootNode.js",
+			"lib/PageProperties.ISOLATED.js",
+			"lib/PageProperties.js",
+			"lib/ThemeManager.ISOLATED.js",
+			"lib/AppearanceManager.ISOLATED.js"
+		],
+		"css": ["lib/css/init.css"],
+		"bhv": ["lib/bhv/init.bhv"]
+	},
     "declarative_net_request": {
         "rule_resources": [{
             "id": "ruleset_1",
@@ -22,5 +58,14 @@
             "path": "rules.json"
         }]
     },
-    "incognito": "spanning"
+	"web_accessible_resources": [
+		{
+			"resources": [
+				"lib/bhv/init.bhv",
+				"lib/css/init.css",
+				"lib/Consent/iframe/consent-manager.html"
+			],
+			"matches": ["<all_urls>"]
+		}
+	]
 }

@@ -25,9 +25,6 @@
             this.isUpdating = true;
             const rootAria = document.querySelector('aria-ml');
             const currentTurnSelectors = new Set();
-            
-            // Style de base persistant pour le moteur de slots
-            this.ensureDefaultStyle();
 
             // 1. Synchronisation des attributs racines (lang, dir, class...)
             if (rootAria) {
@@ -61,19 +58,6 @@
                 }
             }
             return null;
-        },
-
-        ensureDefaultStyle: function() {
-            if (!document.head.querySelector('#ariaml-default-style')) {
-                const style = document.createElement('style');
-                style.id = 'ariaml-default-style';
-                style.innerHTML = `
-                    :not(aria-ml) > [slot] { display: none !important; }
-                    html, body { margin: 0; padding: 0; height: 100%; }
-                    aria-ml { display: block; min-height: 100%; padding: 8px; box-sizing: border-box; background: white; color: black;}
-                    @media (prefers-color-scheme: dark) { aria-ml { background: black; color: white; } }`;
-                document.head.prepend(style);
-            }
         },
 
         syncRootAttributes: function(rootAria, data) {

@@ -1,5 +1,5 @@
 /**
- * AppearanceManager.js
+ * AppearanceManager.ISOLATED.js
  * Orchestrateur du rendu visuel : génère les assets, thèmes, couleurs et viewport.
  */
 (function() {
@@ -113,14 +113,15 @@
     window.AppearanceManager = AppearanceManager;
     
     const root = document.querySelector('aria-ml');
+    
     if (root) {
-        // Observation des mutations (pour Navigation.js ou changement de script JSON)
         new MutationObserver(() => AppearanceManager.render(AppearanceManager.parse()))
             .observe(root, { childList: true, subtree: true, characterData: true });
     }
 
     // EXECUTION INITIALE : Correction immédiate du rendu SSR si le thème stocké diffère
     const config = AppearanceManager.parse();
+
     if (config) {
         AppearanceManager.render(config);
     }
