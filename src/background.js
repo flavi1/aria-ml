@@ -5,17 +5,8 @@ async function injectAriaResources(tabId) {
     const resources = manifest.web_accessible_resources[0].ariaml_ressources;
 
     try {
-        // 1. Injection des scripts JS
-        if (resources.js)
-			for(s of resources.js) {
-				await api.scripting.executeScript({
-					target: { tabId: tabId, allFrames: true },
-					files: [s],
-					world: (s.indexOf('/ISOLATED/') !== -1) ? 'ISOLATED' : 'MAIN'
-				});
-			}
-
-        // 2. Injection des Beahaviors
+		
+        // 1. Injection des Beahaviors
         if (resources.bhv)
 			for(f of resources.bhv) {
 				await chrome.scripting.executeScript({
@@ -31,12 +22,24 @@ async function injectAriaResources(tabId) {
 				});
 			}
 
-        // 3. Injection du CSS
+        // 2. Injection du CSS
         if (resources.css)
             await api.scripting.insertCSS({
                 target: { tabId: tabId, allFrames: true },
                 files: resources.css
             });
+		
+        // 3. Injection des scripts JS
+        if (resources.js)
+			for(s of resources.js) {
+				await api.scripting.executeScript({
+					target: { tabId: tabId, allFrames: true },
+					files: [s],
+					world: (s.indexOf('/ISOLATED/') !== -1) ? 'ISOLATED' : 'MAIN'
+				});
+			}
+
+
 
         console.log("AriaML: Ressources dynamiques injectées avec succès.");
     } catch (err) {
@@ -51,7 +54,7 @@ api.webNavigation.onCommitted.addListener((details) => {
                 func: () => {
 					const rawContent = document.body ? document.body.innerText : document.documentElement.textContent;
 					
-console.warn({source: rawContent})
+console.log({source: rawContent})
 					
 					const isAria = (raw) => {
 						for(begin of ['<!DOCTYPE aria-ml>', '<aria-ml>', '<aria-ml ', "<aria-ml\n" ])

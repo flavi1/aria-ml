@@ -23,43 +23,45 @@
     // Fonction utilitaire pour vérifier si une ressource est éligible (pas de .WEBEXT.)
     const isEligible = (path) => !path.includes('.WEBEXT.');
 
-    // --- Injection des ressources ---
+	// --- Injection des ressources (Ordre de priorité : Système en premier dans le DOM) ---
 
-    // 1. CSS (Injection immédiate via balise link)
-    if (resources.css) {
-        resources.css.filter(isEligible).forEach(path => {
-            const link = document.createElement('link');
-            link.rel = 'stylesheet';
-            link.href = `${baseUrl}${path}`;
-            document.head.appendChild(link);
-        });
-    }
+	// Note : On traite JS en dernier car il dépend du DOM, 
+	// mais on injecte CSS et BHV en haut du <head> (prepend).
 
-    // 2. Behaviors (Injection via balise script avec SRC)
-    if (resources.bhv) {
-        resources.bhv.filter(isEligible).forEach(path => {
-            const script = document.createElement('script');
-            script.type = 'text/behavior';
-            script.src = `${baseUrl}${path}`;
-            document.head.appendChild(script);
-        });
-    }
+	// 1. Behaviors (Préfixés pour être surchargés)
+	if (resources.bhv) {
+		// On inverse pour maintenir l'ordre interne du manifest lors du prepend
+		[...resources.bhv].reverse().filter(isEligible).forEach(path => {
+			const script = document.createElement('script');
+			script.type = 'text/behavior';
+			script.src = `${baseUrl}${path}`;
+			document.head.prepend(script);
+		});
+	}
 
-    // 3. JavaScript (Injection séquentielle pour respecter les dépendances)
-    if (resources.js) {
-        const jsFiles = resources.js.filter(isEligible);
-        
-        for (const path of jsFiles) {
-            await new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = `${baseUrl}${path}`;
-                // Important : en mode standalone, tout s'exécute dans le MAIN world
-                script.onload = resolve;
-                script.onerror = reject;
-                document.head.appendChild(script);
-            });
-        }
-    }
+	// 2. CSS (Préfixés pour être surchargés)
+	if (resources.css) {
+		[...resources.css].reverse().filter(isEligible).forEach(path => {
+			const link = document.createElement('link');
+			link.rel = 'stylesheet';
+			link.href = `${baseUrl}${path}`;
+			document.head.prepend(link);
+		});
+	}
+
+	// 3. JavaScript (Reste en bas du head ou body pour l'exécution)
+	if (resources.js) {
+		const jsFiles = resources.js.filter(isEligible);
+		for (const path of jsFiles) {
+			await new Promise((resolve, reject) => {
+				const script = document.createElement('script');
+				script.src = `${baseUrl}${path}`;
+				script.onload = resolve;
+				script.onerror = reject;
+				document.head.appendChild(script); 
+			});
+		}
+	}
 
     console.log("AriaML: Polyfill autonome chargé avec succès.");
 })();
