@@ -40,8 +40,8 @@
     ],
     "ariaml_ressources": {
 		"js": [
-			"lib/Bridge.WEBEXT.ISOLATED.js"
-			"lib/ProxyFactory.WEBEXT.js"
+			"lib/Bridge.WEBEXT.ISOLATED.js",
+			"lib/ProxyFactory.WEBEXT.js",
 			"lib/RootNode.js",
 			"lib/PageProperties.ISOLATED.js",
 			"lib/PageProperties.js",
