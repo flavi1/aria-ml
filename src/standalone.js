@@ -1,11 +1,11 @@
 /**
- * AriaML embed.js
+ * AriaML standalone.js
  * Polyfill autonome (Standalone)
  * Rôle : Injecter les ressources AriaML sans dépendance à une extension.
  */
 (async function() {
     // 1. Détecter le chemin de base du script embed.js
-    const scriptUrl = new URL(import.meta.url || document.currentScript.src);
+    const scriptUrl = new URL(document.currentScript.src);
     const baseUrl = scriptUrl.href.substring(0, scriptUrl.href.lastIndexOf('/') + 1);
 
     // 2. Charger le manifest.json pour connaître les ressources
