@@ -1,6 +1,6 @@
 <?php
     require_once 'AriaML.php';
-    $render = AriaML::handle(true); // Active le mode test client
+    $render = AriaML::handle(); // Active le mode test client
 ?>
 <aria-ml
     prefix="og: http://ogp.me/ns# another: http://another.org/ns#"
@@ -11,18 +11,18 @@
 		"@context": "https://ariaml.org/ns#",
 		"@type": "PageProperties",
 		"canonical": "https://canonical.lnk",
-		"CSRF": "MyToken",
-		"metadatas": [{
-				"name": "title",
+		"csrf-token": "MyToken",
+		"metadatas": {
+			"title": {
 				"content": "Ma super page",
 				"property": ["og:title", "another:title"]
 			},
-			{
+			"description" : {
 				"name": ["description", "twitter:description"],
 				"property": ["og:description", "another:description"],
 				"content": "La référence HTML décrit tous les éléments et attributs HTML."
 			}
-		]
+		}
 	}]
     </script>
     
@@ -65,6 +65,7 @@
 		<h1>Le document est prêt.</h1>
 		<p>Ce contenu est encapsulé dans &lt;aria-ml&gt;.</p>
 		<span slot="a-slot-in-another-slot">Yes! Rien à faire!</span>
+		<script>alert('Hello JS')</script>
 	</main>
 </aria-ml>
 <?php $render(); ?>
