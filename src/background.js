@@ -2,7 +2,7 @@ const api = typeof browser !== "undefined" ? browser : chrome;
 
 async function injectAriaResources(tabId) {
     const manifest = chrome.runtime.getManifest();
-    const resources = manifest.ariaml_ressources;
+    const resources = manifest.web_accessible_resources[0].ariaml_ressources;
 
     try {
         // 1. Injection des scripts JS

@@ -18,7 +18,7 @@
         return;
     }
 
-    const resources = manifest.ariaml_ressources || {};
+    const resources = manifest.web_accessible_resources[0].ariaml_ressources || {};
 
     // Fonction utilitaire pour vérifier si une ressource est éligible (pas de .WEBEXT.)
     const isEligible = (path) => !path.includes('.WEBEXT.');

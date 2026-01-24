@@ -3,7 +3,7 @@
  * Orchestrateur enrichi pour AriaML v1.1.
  */
 const behaviorCore = (() => {
-    const definitionFactory = GlobalSheetParser('behavior', 'text/behavior');
+    const definitionFactory = GlobalSheetParser('behavior', 'script[type="text/behavior"]', 'src');
     const initializedElements = new WeakSet();
 
     // Injection du Proxy Global
