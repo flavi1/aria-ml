@@ -26,12 +26,6 @@
                 "lib/Consent/ConsentBridge.js",
 
                 "lib/Model.js",
-
-                "lib/BehaviorManager/GlobalSheetParser.js",
-                "lib/BehaviorManager/behaviorCore.js",
-                "lib/BehaviorManager/behaviorActions.js",
-                "lib/BehaviorManager/behaviorKeyboard.js",
-                "lib/BehaviorManager/behaviorResolvers.js"
             ],
             "run_at": "document_start",
             "all_frames": true,
@@ -42,13 +36,23 @@
 		"js": [
 			"lib/ISOLATED/Bridge.WEBEXT.js",
 			"lib/ProxyFactory.WEBEXT.js",
+			
 			"lib/RootNode.js",
+			
 			"lib/ISOLATED/PageProperties.js",
 			"lib/PageProperties.js",
+			
 			"lib/ISOLATED/ThemeManager.js",
 			"lib/ISOLATED/AppearanceManager.js",
+			
 			"lib/ISOLATED/Form.js",
 			"lib/ISOLATED/Navigation.js",
+			
+			"lib/ISOLATED/BehaviorManager/GlobalSheetParser.js",
+			"lib/ISOLATED/BehaviorManager/behaviorCore.js",
+			"lib/ISOLATED/BehaviorManager/behaviorActions.js",
+			"lib/ISOLATED/BehaviorManager/behaviorKeyboard.js",
+			"lib/ISOLATED/BehaviorManager/behaviorResolvers.js"
 		],
 		"css": ["lib/css/init.css"],
 		"bhv": ["lib/bhv/init.bhv"]
