@@ -27,6 +27,7 @@
 
                 "lib/Model.js",
 
+                "lib/BehaviorManager/GlobalSheetParser.js",
                 "lib/BehaviorManager/behaviorCore.js",
                 "lib/BehaviorManager/behaviorActions.js",
                 "lib/BehaviorManager/behaviorKeyboard.js",
@@ -39,15 +40,15 @@
     ],
     "ariaml_ressources": {
 		"js": [
-			"lib/Bridge.WEBEXT.ISOLATED.js",
+			"lib/ISOLATED/Bridge.WEBEXT.js",
 			"lib/ProxyFactory.WEBEXT.js",
 			"lib/RootNode.js",
-			"lib/PageProperties.ISOLATED.js",
+			"lib/ISOLATED/PageProperties.js",
 			"lib/PageProperties.js",
-			"lib/ThemeManager.ISOLATED.js",
-			"lib/AppearanceManager.ISOLATED.js",
-			"lib/Form.ISOLATED.js",
-			"lib/Navigation.ISOLATED.js",
+			"lib/ISOLATED/ThemeManager.js",
+			"lib/ISOLATED/AppearanceManager.js",
+			"lib/ISOLATED/Form.js",
+			"lib/ISOLATED/Navigation.js",
 		],
 		"css": ["lib/css/init.css"],
 		"bhv": ["lib/bhv/init.bhv"]

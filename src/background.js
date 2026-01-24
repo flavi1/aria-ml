@@ -11,7 +11,7 @@ async function injectAriaResources(tabId) {
 				await api.scripting.executeScript({
 					target: { tabId: tabId, allFrames: true },
 					files: [s],
-					world: (s.indexOf('.ISOLATED.') !== -1) ? 'ISOLATED' : 'MAIN'
+					world: (s.indexOf('/ISOLATED/') !== -1) ? 'ISOLATED' : 'MAIN'
 				});
 			}
 
