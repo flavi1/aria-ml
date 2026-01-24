@@ -67,18 +67,30 @@
 
 		syncHead: function(data, tracker) {
 			if (data.canonical) this.syncLink('canonical', data.canonical, {}, tracker);
-			if (data['csrf-token']) {this.syncMeta('name', 'csrf-token', data['csrf-token'], tracker);}
+			if (data['csrf-token']) {
+				this.syncMeta('name', 'csrf-token', data['csrf-token'], tracker);
+			}
 			
 			if (data.metadatas && typeof data.metadatas === 'object') {
 				Object.entries(data.metadatas).forEach(([key, meta]) => {
 					const content = meta.content;
-					
 					let names = meta.name ? [].concat(meta.name) : [key];
 					let props = meta.property ? [].concat(meta.property) : [];
 
-					if (names.includes('title')) {document.title = content;}
-					names.forEach(n => {this.syncMeta('name', n, content, tracker);});
-					props.forEach(p => {this.syncMeta('property', p, content, tracker);});
+					// Gestion du Titre : Modification directe de la balise <title>
+					if (names.includes('title')) {
+						let titleEl = document.querySelector('title');
+						if (!titleEl) {
+							titleEl = document.createElement('title');
+							document.head.appendChild(titleEl);
+						}
+						if (titleEl.textContent !== content) {
+							titleEl.textContent = content;
+						}
+					}
+
+					names.forEach(n => { this.syncMeta('name', n, content, tracker); });
+					props.forEach(p => { this.syncMeta('property', p, content, tracker); });
 				});
 			}
 		},
@@ -94,6 +106,8 @@
         },
 
         syncMeta: function(attr, val, content, tracker, isEquiv = false) {
+			if(attr == 'name' && val == 'title')
+				return;
             const key = isEquiv ? 'http-equiv' : attr;
             const sel = `meta[${key}="${val}"]`;
             if (tracker) tracker.add(sel);
