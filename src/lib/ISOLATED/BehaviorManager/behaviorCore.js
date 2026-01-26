@@ -27,6 +27,7 @@ console.log(definitionFactory)
     };
 
     const processLifecycle = async (el) => {
+console.log(el)
         if (!(el instanceof HTMLElement)) return;
         const props = el.behavior.computed;
         if (!props || Object.keys(props).length === 0) return;
@@ -59,8 +60,11 @@ console.log(definitionFactory)
     };
 
     const start = async () => {
+console.log('start awaiting BS')
         // ATTENTE CRUCIALE DES FEUILLES DISTANTES
         await definitionFactory.ready;
+        
+console.log('end awaiting BS')
         
         const observer = new MutationObserver(m => m.forEach(res => res.addedNodes.forEach(processLifecycle)));
         observer.observe(document.documentElement, { childList: true, subtree: true });
