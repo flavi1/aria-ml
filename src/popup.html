@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { width: 220px; font-family: sans-serif; padding: 10px; }
+        .status { padding: 5px; border-radius: 4px; text-align: center; margin-bottom: 10px; }
+        .is-aria { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .not-aria { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        select { width: 100%; padding: 5px; margin-top: 5px; }
+        label { font-size: 0.8em; color: #666; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div id="statusIndicator" class="status">Détection...</div>
+    
+    <div id="themeSection" class="hidden">
+        <label for="themeSelect">Thème du document :</label>
+        <select id="themeSelect"></select>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
