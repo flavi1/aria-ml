@@ -60,8 +60,9 @@
 					"lib/ISOLATED/ThemeManager.js",
 					"lib/ISOLATED/AppearanceManager.js",
 					
-					"lib/ISOLATED/Form.js",
-					"lib/ISOLATED/Navigation.js",
+					"lib/ISOLATED/Navigation/NodeCache.js",
+					"lib/ISOLATED/Navigation/Form.js",
+					"lib/ISOLATED/Navigation/Navigation.js",
 					
 					"lib/ISOLATED/BehaviorManager/GlobalSheetParser.js",
 					"lib/ISOLATED/BehaviorManager/behaviorCore.js",

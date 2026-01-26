@@ -107,50 +107,81 @@ class AriaMLNavigation {
     }
 
 	/**
-     * Cœur de la navigation SPA.
+	 * Cœur de la navigation SPA.
+	 */
+	async navigate(url, pushState = true, customOptions = {}) {
+		const useTransition = document.startViewTransition && 
+							!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+		// --- PHASE DE REQUÊTE : Verrouillage Global immédiat ---
+		document.documentElement.setAttribute('aria-busy', 'true');
+		document.documentElement.setAttribute('inert', '');
+
+		try {
+			// Récupération des clefs du NodeCache
+			const cacheKeys = window.NodeCache ? NodeCache.getValidKeys() : [];
+
+			const fetchOptions = {
+				method: customOptions.method || 'GET',
+				headers: {
+					'Accept': 'text/aria-ml, application/aria-xml, text/html, application/xhtml+xml',
+					'Live-Cache': JSON.stringify(cacheKeys), // Injection du header
+					...(customOptions.headers || {})
+				},
+				body: customOptions.method !== 'GET' ? customOptions.body : null,
+				redirect: 'follow'
+			};
+
+			const response = await fetch(url, fetchOptions);
+			const finalUrl = response.url || url;
+
+			if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+			const text = await response.text();
+			const contentType = response.headers.get('Content-Type') || 'text/html';
+			const mimeType = contentType.includes('xml') ? 'application/xhtml+xml' : 'text/html';
+			const doc = new DOMParser().parseFromString(text, mimeType);
+
+			await this.applyDOMUpdate(doc, finalUrl, pushState);
+
+		} catch (error) {
+			console.warn('AriaML Navigation Fallback:', error.message);
+			document.documentElement.removeAttribute('aria-busy');
+			document.documentElement.removeAttribute('inert');
+			
+			if (pushState && (!customOptions.method || customOptions.method === 'GET')) {
+				window.location.href = url;
+			}
+		}
+	}
+
+	/**
+     * Restaure les éléments depuis le NodeCache Registry
      */
-    async navigate(url, pushState = true, customOptions = {}) {
-        const useTransition = document.startViewTransition && 
-                            !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-        // --- PHASE DE REQUÊTE : Verrouillage Global immédiat ---
-        document.documentElement.setAttribute('aria-busy', 'true');
-        document.documentElement.setAttribute('inert', '');
-
-        try {
-            const fetchOptions = {
-                method: customOptions.method || 'GET',
-                headers: {
-                    'Accept': 'text/aria-ml, application/aria-xml, text/html, application/xhtml+xml',
-                    ...(customOptions.headers || {})
-                },
-                body: customOptions.method !== 'GET' ? customOptions.body : null,
-                redirect: 'follow'
-            };
-
-            const response = await fetch(url, fetchOptions);
-            const finalUrl = response.url || url;
-
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-            const text = await response.text();
-            const contentType = response.headers.get('Content-Type') || 'text/html';
-            const mimeType = contentType.includes('xml') ? 'application/xhtml+xml' : 'text/html';
-            const doc = new DOMParser().parseFromString(text, mimeType);
-
-            // Le transfert vers applyDOMUpdate gère la transition de busy
-            await this.applyDOMUpdate(doc, finalUrl, pushState);
-
-        } catch (error) {
-            console.warn('AriaML Navigation Fallback:', error.message);
-            // En cas d'erreur, on libère le document avant le fallback
-            document.documentElement.removeAttribute('aria-busy');
-            document.documentElement.removeAttribute('inert');
-            
-            if (pushState && (!customOptions.method || customOptions.method === 'GET')) {
-                window.location.href = url;
-            }
+    restoreFromCache(incomingDoc) {
+        // Sécurité : on vérifie l'existence globale du cache
+        if (typeof NodeCache === 'undefined' || !NodeCache.registry) {
+            console.warn('AriaML NodeCache non disponible pour la restauration.');
+            return;
         }
+        
+        incomingDoc.querySelectorAll('[live-cache]').forEach(incomingEl => {
+            const key = incomingEl.getAttribute('live-cache');
+            const savedNode = NodeCache.registry.get(key);
+
+            if (savedNode) {
+                if (incomingEl.tagName.toLowerCase() === 'aria-ml-fragment') {
+                    // C'est un slot : on transfère le contenu (children)
+                    incomingEl.innerHTML = '';
+                    while (savedNode.firstChild) {
+                        incomingEl.appendChild(savedNode.firstChild);
+                    }
+                } else {
+                    // C'est un élément standard : remplacement du nœud
+                    incomingEl.replaceWith(savedNode);
+                }
+            }
+        });
     }
 
 	async applyDOMUpdate(doc, url, pushState) {
@@ -174,6 +205,9 @@ class AriaMLNavigation {
             if (useTransition) currentRoot.style.viewTransitionName = 'aria-ml-root';
             targetSlots.push(currentRoot);
         } else {
+			
+			this.restoreFromCache(doc);
+			
             // Libération de la racine pour permettre l'interaction hors-slots
             document.documentElement.removeAttribute('aria-busy');
             document.documentElement.removeAttribute('inert');
