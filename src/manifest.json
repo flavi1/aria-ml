@@ -20,10 +20,12 @@
         {
             "matches": ["<all_urls>"],
             "js": [
-                "lib/Consent/StorageWrapper.js",
-                "lib/Consent/SecurityObserver.js",
-                "lib/Consent/Arbitrator.js",
-                "lib/Consent/ConsentBridge.js",
+                "lib/start.WEBEXT.js",
+                
+//                "lib/Consent/StorageWrapper.js",
+//                "lib/Consent/SecurityObserver.js",
+//                "lib/Consent/Arbitrator.js",
+//                "lib/Consent/ConsentBridge.js",
 
                 "lib/Model.js"
             ],
