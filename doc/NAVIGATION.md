@@ -1,14 +1,18 @@
+C'est un choix sage. Restreindre le secret (le jeton CSRF) à la zone de confiance (navigationBaseUrl) est la pratique standard la plus sûre : on ne donne les clés de la maison qu'à ceux qui habitent à la même adresse.
+
+Voici le code source brut de votre document, formaté selon vos exigences (indentation de 4 espaces, sans blocs de code clôturés par des accents graves pour le bloc parent).
+
 # Navigation : L’Évolution Dynamique du Document AriaML
 
-Dans le standard AriaML, la navigation n'est pas un remplacement de page, mais une **mutation sémantique**. Le document racine `<aria-ml>` est persistant, tandis que son contenu évolue par injection de fragments ou repeuplement total, orchestré par un cycle de transition sécurisé.
+Dans le standard AriaML, la navigation n'est pas un remplacement de page, mais une **mutation sémantique**. Le document racine `<aria-ml>` est persistant, tandis que son contenu interne (les slots) et ses propriétés (`PageProperties`) évoluent dynamiquement par l'injection de fragments ou le repeuplement de la racine, orchestré par un cycle de transition sécurisé.
 
 ---
 
 ## 1. Le Fragment comme Vecteur de Mutation
-Un fragment AriaML permet de mettre à jour la substance sémantique sans rompre la continuité du rendu.
+Un fragment AriaML est une extension partielle du document permettant de mettre à jour la substance sémantique sans rompre la continuité du rendu ou des ressources chargées.
 
 ### Architecture d'un Fragment
-Un fragment doit être capable de restaurer le document racine s'il est consulté hors contexte.
+Un fragment doit intégrer sa propre logique de sécurité pour forcer la restauration du document racine s'il est consulté hors contexte.
 
 ```html
 <meta http-equiv="refresh" content="0;url=./">
@@ -56,29 +60,27 @@ Le standard distingue deux types de mutations après réception de la réponse :
 
 Le **NodeCache** assure la persistance des nœuds DOM entre les vues, indépendamment de la pile d'historique.
 
-* **Enregistrement** : Les éléments portant l'attribut `live-cache` sont mémorisés par l'agent utilisateur.
+* **Enregistrement** : Les éléments portant l'attribut `live-cache` sont mémorisés par l'agent utilisateur dès leur insertion dans le DOM.
 * **Restauration** :
     * **Slots (`<aria-ml-fragment>`)** : Le conteneur est préservé, le contenu (children) est déplacé depuis le cache vers le nouveau slot.
     * **Éléments standards** : Le nœud vide envoyé par le serveur est remplacé par le nœud réel stocké en mémoire.
-* **Persistance** : Le cache survit même si l'élément est détaché du DOM (ex: pagination).
-
-
+* **Persistance** : Le cache survit même si l'élément est détaché du DOM (ex: pagination, filtres).
 
 ---
 
 ## 4. Transitions et Feedback Visuel
 
-Le standard AriaML préconise l'utilisation des **View Transitions API** de manière progressive. Si les transitions ne sont pas supportées ou désactivées par l'utilisateur, une mise à jour directe est effectuée sans rompre le cycle de navigation.
+Le standard AriaML préconise l'utilisation des **View Transitions API** de manière progressive. Si les transitions ne sont pas supportées ou désactivées par l'utilisateur (`prefers-reduced-motion`), une mise à jour directe est effectuée sans rompre le cycle de navigation.
 
 ---
 
 ## 5. Gestion des Formulaires et Verbes Étendus
 
 AriaML lève les limitations historiques du HTML concernant les méthodes de soumission :
-* **Méthodes** : Support natif des verbes `PUT`, `PATCH`, `DELETE`. 
-* **Périmètre** : L'utilisation de ces verbes est restreinte aux URLs appartenant à la `navigationBaseUrl`.
+* **Méthodes** : Support natif des verbes `GET`, `POST`, `PUT`, `PATCH`, `DELETE`. 
+* **Périmètre** : L'utilisation des verbes étendus est restreinte aux URLs appartenant à la `navigationBaseUrl`.
 * **Logique Serveur** : Le serveur adapte son traitement et la granularité de sa réponse (fragment ou page complète) en fonction du verbe reçu.
-* **Encodage JSON** : `enctype="application/json"` permet la transmission d'un objet JSON unique. Les fichiers y sont sérialisés en Base64.
+* **Encodage JSON** : `enctype="application/json"` permet la transmission d'un objet JSON unique. Les fichiers y sont sérialisés en Base64 (Data URI).
 
 ---
 
@@ -86,8 +88,8 @@ AriaML lève les limitations historiques du HTML concernant les méthodes de sou
 
 ### Jeton CSRF
 Le jeton de sécurité est extrait dynamiquement des `PageProperties`. Sa transmission est strictement limitée au périmètre de la `navigationBaseUrl` :
-1. Dans l'en-tête `X-CSRF-TOKEN` pour les requêtes asynchrones.
-2. Dans un champ nommé `_token` pour les soumissions de formulaires.
+1. Dans l'en-tête `X-CSRF-TOKEN` pour les requêtes de mutation (`fetch`).
+2. Dans un champ nommé `_token` pour toutes les soumissions de formulaires.
 
 ### Verrouillage du Périmètre
 La `navigationBaseUrl` définit la zone de confiance. Toute navigation sortant de cette origine décharge le contexte AriaML pour revenir à un mode de navigation classique. Cela garantit qu'aucun site tiers ne peut accéder au `NodeCache` ou aux propriétés internes du document.
@@ -98,7 +100,7 @@ La `navigationBaseUrl` définit la zone de confiance. Toute navigation sortant d
 
 Après chaque mutation, le focus est réattribué pour garantir la continuité de l'expérience :
 1. Priorité à l'élément portant l'attribut `autofocus` dans le nouveau contenu.
-2. À défaut, le focus se déplace sur le premier slot impacté.
+2. À défaut, le focus se déplace sur le premier slot impacté (avec l'ajout d'un `tabindex="-1"` si nécessaire).
 3. En dernier recours, la racine `<aria-ml>` reçoit le focus.
 
 L'utilisation de l'attribut `visually-hidden` sur des éléments sensibles au focus permet une prise en charge native de l'accessibilité contextuelle.

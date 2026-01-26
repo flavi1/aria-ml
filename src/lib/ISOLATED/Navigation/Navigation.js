@@ -6,9 +6,23 @@ class AriaMLNavigation {
 
     constructor(config) {
         if (AriaMLNavigation.instance) return AriaMLNavigation.instance;
-        this.baseUrl = new URL(config.navigationBaseUrl).origin;
+        
+        // On s'assure d'extraire l'origine pour les comparaisons de sécurité
+        this.baseUrl = new URL(config.navigationBaseUrl, window.location.origin).origin;
         AriaMLNavigation.instance = this;
         this.initEventListeners();
+    }
+
+    /**
+     * Vérifie si une URL appartient au périmètre de confiance AriaML.
+     */
+    isInternal(url) {
+        try {
+            const target = new URL(url, window.location.origin);
+            return target.origin === this.baseUrl;
+        } catch (e) {
+            return false;
+        }
     }
 
     initEventListeners() {
@@ -28,23 +42,24 @@ class AriaMLNavigation {
         document.addEventListener('submit', e => {
             const form = e.target;
             const action = form.getAttribute('action') || window.location.href;
-            if (this.shouldIntercept({ href: action })) {
+            
+            // On n'intercepte que si l'action est interne
+            if (this.isInternal(action)) {
                 e.preventDefault();
                 this.handleFormSubmit(form, e.submitter);
             }
         });
 
-        // Bouton retour navigateur
+        // Gestion du bouton retour/suivant du navigateur
         window.addEventListener('popstate', () => this.navigate(window.location.href, false));
     }
 
     shouldIntercept(element) {
         if (!element?.href) return false;
-        const url = new URL(element.href, window.location.origin);
-        return url.origin === this.baseUrl && !element.hasAttribute('download');
+        return this.isInternal(element.href) && !element.hasAttribute('download');
     }
 
-	async handleFormSubmit(form, submitter) {
+    async handleFormSubmit(form, submitter) {
         const options = await AriaMLForm.prepare(form, submitter);
         const url = new URL(options.action, window.location.origin);
 
@@ -52,7 +67,6 @@ class AriaMLNavigation {
         buttons.forEach(btn => btn.disabled = true);
 
         try {
-            // Utilisation de la méthode exposée
             if (options.target === '_slots') {
                 await this.navigate(url.toString(), true, options);
             } else {
@@ -64,16 +78,17 @@ class AriaMLNavigation {
     }
 
     /**
-     * Simule la navigation vers _self, _blank etc. pour les méthodes PUT/PATCH ou JSON.
+     * Gère les navigations vers _self, _blank etc. pour les verbes étendus ou JSON.
      */
     async executeClassicNavigation(url, options) {
+        const internal = this.isInternal(url);
         const isStandard = (options.method === 'GET' || options.method === 'POST') && options.enctype !== 'application/json';
         
-        // Si c'est du standard vers _blank, on laisse faire nativement le navigateur
+        // Si standard et _blank, on laisse le comportement natif
         if (isStandard && options.target === '_blank') {
             const f = document.createElement('form');
             f.method = options.method; f.action = url; f.target = '_blank';
-            if (options.method === 'POST') {
+            if (options.method === 'POST' && options.body instanceof FormData) {
                 for (const [k, v] of options.body.entries()) {
                     const i = document.createElement('input'); i.type='hidden'; i.name=k; i.value=v; f.appendChild(i);
                 }
@@ -82,18 +97,21 @@ class AriaMLNavigation {
             return;
         }
 
-        // Sinon (PUT/PATCH/JSON), on utilise le Shadow Form avec les champs cachés de contournement
-		const sf = document.createElement('form');
+        // Pour les verbes étendus ou JSON, on construit la soumission
+        const sf = document.createElement('form');
         sf.method = 'POST'; sf.action = url; sf.target = options.target;
 
-        if (['PUT', 'PATCH', 'DELETE'].includes(options.method)) {
-            const m = document.createElement('input'); m.type='hidden'; m.name='_method'; m.value=options.method; sf.appendChild(m);
+        // RESTRICTION : Verbes étendus & CSRF uniquement si interne
+        if (internal) {
+            if (['PUT', 'PATCH', 'DELETE'].includes(options.method)) {
+                const m = document.createElement('input'); m.type='hidden'; m.name='_method'; m.value=options.method; sf.appendChild(m);
+            }
+            const csrf = window.PageProperties?.['csrf-token'];
+            if (csrf) {
+                const c = document.createElement('input'); c.type='hidden'; c.name='_token'; c.value=csrf; sf.appendChild(c);
+            }
         }
-        
-        const csrf = window.PageProperties?.['csrf-token'];
-        if (csrf) {
-            const c = document.createElement('input'); c.type='hidden'; c.name='_token'; c.value=csrf; sf.appendChild(c);
-        }
+
         if (options.enctype === 'application/json') {
             const j = document.createElement('input'); j.type='hidden'; j.name='_json'; j.value=options.body; sf.appendChild(j);
         } else if (options.body instanceof FormData) {
@@ -103,67 +121,65 @@ class AriaMLNavigation {
                 }
             }
         }
+        
         document.body.appendChild(sf); sf.submit(); document.body.removeChild(sf);
     }
 
-	/**
-	 * Cœur de la navigation SPA.
-	 */
-	async navigate(url, pushState = true, customOptions = {}) {
-		const useTransition = document.startViewTransition && 
-							!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-		// --- PHASE DE REQUÊTE : Verrouillage Global immédiat ---
-		document.documentElement.setAttribute('aria-busy', 'true');
-		document.documentElement.setAttribute('inert', '');
-
-		try {
-			// Récupération des clefs du NodeCache
-			const cacheKeys = window.NodeCache ? NodeCache.getValidKeys() : [];
-
-			const fetchOptions = {
-				method: customOptions.method || 'GET',
-				headers: {
-					'Accept': 'text/aria-ml, application/aria-xml, text/html, application/xhtml+xml',
-					'Live-Cache': JSON.stringify(cacheKeys), // Injection du header
-					...(customOptions.headers || {})
-				},
-				body: customOptions.method !== 'GET' ? customOptions.body : null,
-				redirect: 'follow'
-			};
-
-			const response = await fetch(url, fetchOptions);
-			const finalUrl = response.url || url;
-
-			if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-			const text = await response.text();
-			const contentType = response.headers.get('Content-Type') || 'text/html';
-			const mimeType = contentType.includes('xml') ? 'application/xhtml+xml' : 'text/html';
-			const doc = new DOMParser().parseFromString(text, mimeType);
-
-			await this.applyDOMUpdate(doc, finalUrl, pushState);
-
-		} catch (error) {
-			console.warn('AriaML Navigation Fallback:', error.message);
-			document.documentElement.removeAttribute('aria-busy');
-			document.documentElement.removeAttribute('inert');
-			
-			if (pushState && (!customOptions.method || customOptions.method === 'GET')) {
-				window.location.href = url;
-			}
-		}
-	}
-
-	/**
-     * Restaure les éléments depuis le NodeCache Registry
+    /**
+     * Cœur de la navigation SPA (fetch + DOM Update).
      */
-    restoreFromCache(incomingDoc) {
-        // Sécurité : on vérifie l'existence globale du cache
-        if (typeof NodeCache === 'undefined' || !NodeCache.registry) {
-            console.warn('AriaML NodeCache non disponible pour la restauration.');
-            return;
+    async navigate(url, pushState = true, customOptions = {}) {
+        document.documentElement.setAttribute('aria-busy', 'true');
+        document.documentElement.setAttribute('inert', '');
+
+        try {
+            const internal = this.isInternal(url);
+            const cacheKeys = window.NodeCache ? NodeCache.getValidKeys() : [];
+
+            const headers = {
+                'Accept': 'text/aria-ml, application/aria-xml, text/html, application/xhtml+xml',
+                ...(customOptions.headers || {})
+            };
+
+            // RESTRICTION : NodeCache & CSRF uniquement si interne
+            if (internal) {
+                headers['Live-Cache'] = JSON.stringify(cacheKeys);
+                const csrf = window.PageProperties?.['csrf-token'];
+                if (csrf) headers['X-CSRF-TOKEN'] = csrf;
+            }
+
+            const fetchOptions = {
+                method: customOptions.method || 'GET',
+                headers: headers,
+                body: customOptions.method !== 'GET' ? customOptions.body : null,
+                redirect: 'follow'
+            };
+
+            const response = await fetch(url, fetchOptions);
+            const finalUrl = response.url || url;
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            const text = await response.text();
+            const contentType = response.headers.get('Content-Type') || 'text/html';
+            const mimeType = contentType.includes('xml') ? 'application/xhtml+xml' : 'text/html';
+            const doc = new DOMParser().parseFromString(text, mimeType);
+
+            await this.applyDOMUpdate(doc, finalUrl, pushState);
+
+        } catch (error) {
+            console.warn('AriaML Navigation Fallback:', error.message);
+            document.documentElement.removeAttribute('aria-busy');
+            document.documentElement.removeAttribute('inert');
+            
+            if (pushState && (!customOptions.method || customOptions.method === 'GET')) {
+                window.location.href = url;
+            }
         }
+    }
+
+    restoreFromCache(incomingDoc) {
+        if (typeof NodeCache === 'undefined' || !NodeCache.registry) return;
         
         incomingDoc.querySelectorAll('[live-cache]').forEach(incomingEl => {
             const key = incomingEl.getAttribute('live-cache');
@@ -171,20 +187,16 @@ class AriaMLNavigation {
 
             if (savedNode) {
                 if (incomingEl.tagName.toLowerCase() === 'aria-ml-fragment') {
-                    // C'est un slot : on transfère le contenu (children)
                     incomingEl.innerHTML = '';
-                    while (savedNode.firstChild) {
-                        incomingEl.appendChild(savedNode.firstChild);
-                    }
+                    while (savedNode.firstChild) incomingEl.appendChild(savedNode.firstChild);
                 } else {
-                    // C'est un élément standard : remplacement du nœud
                     incomingEl.replaceWith(savedNode);
                 }
             }
         });
     }
 
-	async applyDOMUpdate(doc, url, pushState) {
+    async applyDOMUpdate(doc, url, pushState) {
         const currentRoot = document.querySelector('aria-ml');
         const incomingRoot = doc.querySelector('aria-ml, aria-ml-fragment');
         const useTransition = document.startViewTransition && 
@@ -199,16 +211,11 @@ class AriaMLNavigation {
         const isFullReplacement = incomingRoot.tagName.toLowerCase() === 'aria-ml';
         const targetSlots = [];
 
-        // --- PHASE DE MUTATION : Transition de Verrouillage ---
         if (isFullReplacement) {
-            // On garde le verrouillage global, mais on prépare le nom de transition
             if (useTransition) currentRoot.style.viewTransitionName = 'aria-ml-root';
             targetSlots.push(currentRoot);
         } else {
-			
-			this.restoreFromCache(doc);
-			
-            // Libération de la racine pour permettre l'interaction hors-slots
+            this.restoreFromCache(doc);
             document.documentElement.removeAttribute('aria-busy');
             document.documentElement.removeAttribute('inert');
 
@@ -216,7 +223,6 @@ class AriaMLNavigation {
                 const slotName = newSlot.getAttribute('slot');
                 const target = currentRoot.querySelector(`[slot="${slotName}"]`);
                 if (target) {
-                    // Verrouillage local du slot pendant sa mutation/animation
                     target.setAttribute('aria-busy', 'true');
                     target.setAttribute('inert', ''); 
                     if (useTransition) target.style.viewTransitionName = `slot-${slotName}`;
@@ -243,12 +249,9 @@ class AriaMLNavigation {
             window.scrollTo(0, 0);
         };
 
-        // --- EXÉCUTION & LIBÉRATION FINALE ---
         if (useTransition) {
             const transition = document.startViewTransition(() => performUpdate());
             await transition.finished;
-
-            // Nettoyage des styles et attributs après animation
             targetSlots.forEach(el => {
                 el.style.viewTransitionName = '';
                 el.removeAttribute('aria-busy');
@@ -262,11 +265,9 @@ class AriaMLNavigation {
             });
         }
 
-        // Libération de la racine (essentiel pour le cas isFullReplacement)
         document.documentElement.removeAttribute('aria-busy');
         document.documentElement.removeAttribute('inert');
 
-        // GESTION DU FOCUS
         const manageFocus = (container) => {
             const auto = container.querySelector('[autofocus]');
             if (auto) {
@@ -278,12 +279,11 @@ class AriaMLNavigation {
         };
 
         if (targetSlots.length > 0) manageFocus(targetSlots[0]);
-
         document.dispatchEvent(new CustomEvent('ariaml:navigated', { detail: { url } }));
     }
 }
 
-// Initialisation automatique au chargement du script isolé
+// Initialisation
 window.NavigationManager = new AriaMLNavigation({ 
     navigationBaseUrl: window.location.origin 
 });
