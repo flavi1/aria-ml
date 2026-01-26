@@ -1,4 +1,63 @@
-:not(aria-ml) > [slot] { display: none !important; }
+body > :not(aria-ml) { display: none !important; }
 html, body { margin: 0; padding: 0; height: 100%; }
-aria-ml { display: block; min-height: 100%; padding: 8px; box-sizing: border-box; background: white; color: green;}
-@media (prefers-color-scheme: dark) { aria-ml { background: black; color: red; } }
+aria-ml { display: block; min-height: 100%; padding: 8px; box-sizing: border-box; background: white; color: black;}
+@media (prefers-color-scheme: dark) { aria-ml { background: black; color: white; } }
+
+:root[aria-busy="true"] {
+    cursor: wait;
+}
+
+/* Accessibility */
+
+:focus-visible {
+	outline: none;
+	-webkit-box-shadow: 0 0 0 5px var(--color-focus) !important;
+	box-shadow: 0 0 0 5px var(--color-focus) !important;
+}
+
+[hidden], template {
+    display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*, *::before, *::after {
+		animation: none !important;
+		animation-name: none !important;
+		animation-duration: 0s !important;
+		view-transition-name: unset !important;
+	}
+	/* TODO : pas de transition ni d'animation dans ce cas: Respect des préférences utilisateurs. */
+}
+
+
+/* https://www.ffoodd.fr/cache-cache-css/ */
+/* for text only, not on focusable elements */
+[visually-hidden] {
+	border: 0;
+	clip: rect(1px, 1px, 1px, 1px);
+	-webkit-clip-path: inset(50%);
+	clip-path: inset(50%);
+	height: 1px;
+	margin: -1px;
+	overflow: hidden;
+	padding: 0;
+	position: absolute;
+	width: 1px;
+	white-space: nowrap;
+}
+
+[visually-hidden]:focus, [visually-hidden]:focus-within {
+	clip: auto;
+	-webkit-clip-path: none;
+	clip-path: none;
+	height: auto;
+	width: auto;
+	margin: 0;
+	overflow: visible;
+	white-space: normal;
+	position: unset;
+}
+
+
+
+

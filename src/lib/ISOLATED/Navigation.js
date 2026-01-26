@@ -106,12 +106,16 @@ class AriaMLNavigation {
         document.body.appendChild(sf); sf.submit(); document.body.removeChild(sf);
     }
 
-    /**
-     * Cœur de la navigation SPA. Gère les redirections (303) et les mises à jour DOM.
+	/**
+     * Cœur de la navigation SPA.
      */
     async navigate(url, pushState = true, customOptions = {}) {
         const useTransition = document.startViewTransition && 
                             !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        // --- PHASE DE REQUÊTE : Verrouillage Global immédiat ---
+        document.documentElement.setAttribute('aria-busy', 'true');
+        document.documentElement.setAttribute('inert', '');
 
         try {
             const fetchOptions = {
@@ -121,12 +125,10 @@ class AriaMLNavigation {
                     ...(customOptions.headers || {})
                 },
                 body: customOptions.method !== 'GET' ? customOptions.body : null,
-                redirect: 'follow' // Gère automatiquement les codes 301, 302, 303, 307, 308
+                redirect: 'follow'
             };
 
             const response = await fetch(url, fetchOptions);
-            
-            // Si le serveur a redirigé, on met à jour l'URL finale pour l'historique
             const finalUrl = response.url || url;
 
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -136,46 +138,115 @@ class AriaMLNavigation {
             const mimeType = contentType.includes('xml') ? 'application/xhtml+xml' : 'text/html';
             const doc = new DOMParser().parseFromString(text, mimeType);
 
-            const incomingRoot = doc.querySelector('aria-ml, aria-ml-fragment');
-            if (!incomingRoot) throw new Error("Format AriaML non détecté.");
-
-            const updateAction = () => this.applyDOMUpdate(doc, finalUrl, pushState);
-            if (useTransition) document.startViewTransition(updateAction);
-            else updateAction();
+            // Le transfert vers applyDOMUpdate gère la transition de busy
+            await this.applyDOMUpdate(doc, finalUrl, pushState);
 
         } catch (error) {
             console.warn('AriaML Navigation Fallback:', error.message);
+            // En cas d'erreur, on libère le document avant le fallback
+            document.documentElement.removeAttribute('aria-busy');
+            document.documentElement.removeAttribute('inert');
+            
             if (pushState && (!customOptions.method || customOptions.method === 'GET')) {
                 window.location.href = url;
             }
         }
     }
 
-	applyDOMUpdate(doc, url, pushState) {
-		const currentRoot = document.querySelector('aria-ml');
-		const incomingRoot = doc.querySelector('aria-ml, aria-ml-fragment');
+	async applyDOMUpdate(doc, url, pushState) {
+        const currentRoot = document.querySelector('aria-ml');
+        const incomingRoot = doc.querySelector('aria-ml, aria-ml-fragment');
+        const useTransition = document.startViewTransition && 
+                              !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-		if (currentRoot && incomingRoot) {
-			if (incomingRoot.tagName.toLowerCase() === 'aria-ml') {
-				// Remplacement global : Les Observers de PageProperties/Appearance réagiront seuls
-				currentRoot.innerHTML = incomingRoot.innerHTML;
-				Array.from(incomingRoot.attributes).forEach(a => currentRoot.setAttribute(a.name, a.value));
-			} else {
-				// Swap de slots : Si un script de config est dans un slot, il sera mis à jour
-				doc.querySelectorAll('[slot]').forEach(newSlot => {
-					const target = currentRoot.querySelector(`[slot="${newSlot.getAttribute('slot')}"]`);
-					if (target) {
-						target.innerHTML = newSlot.innerHTML;
-						Array.from(newSlot.attributes).forEach(a => target.setAttribute(a.name, a.value));
-					}
-				});
-			}
-		}
+        if (!currentRoot || !incomingRoot) {
+            document.documentElement.removeAttribute('aria-busy');
+            document.documentElement.removeAttribute('inert');
+            return;
+        }
 
-		if (pushState) history.pushState(null, '', url);
-		window.scrollTo(0, 0);
-		document.dispatchEvent(new CustomEvent('ariaml:navigated', { detail: { url } }));
-	}
+        const isFullReplacement = incomingRoot.tagName.toLowerCase() === 'aria-ml';
+        const targetSlots = [];
+
+        // --- PHASE DE MUTATION : Transition de Verrouillage ---
+        if (isFullReplacement) {
+            // On garde le verrouillage global, mais on prépare le nom de transition
+            if (useTransition) currentRoot.style.viewTransitionName = 'aria-ml-root';
+            targetSlots.push(currentRoot);
+        } else {
+            // Libération de la racine pour permettre l'interaction hors-slots
+            document.documentElement.removeAttribute('aria-busy');
+            document.documentElement.removeAttribute('inert');
+
+            doc.querySelectorAll('[slot]').forEach(newSlot => {
+                const slotName = newSlot.getAttribute('slot');
+                const target = currentRoot.querySelector(`[slot="${slotName}"]`);
+                if (target) {
+                    // Verrouillage local du slot pendant sa mutation/animation
+                    target.setAttribute('aria-busy', 'true');
+                    target.setAttribute('inert', ''); 
+                    if (useTransition) target.style.viewTransitionName = `slot-${slotName}`;
+                    targetSlots.push(target);
+                }
+            });
+        }
+
+        const performUpdate = () => {
+            if (isFullReplacement) {
+                currentRoot.innerHTML = incomingRoot.innerHTML;
+                Array.from(incomingRoot.attributes).forEach(a => currentRoot.setAttribute(a.name, a.value));
+            } else {
+                doc.querySelectorAll('[slot]').forEach(newSlot => {
+                    const slotName = newSlot.getAttribute('slot');
+                    const target = currentRoot.querySelector(`[slot="${slotName}"]`);
+                    if (target) {
+                        target.innerHTML = newSlot.innerHTML;
+                        Array.from(newSlot.attributes).forEach(a => target.setAttribute(a.name, a.value));
+                    }
+                });
+            }
+            if (pushState) history.pushState(null, '', url);
+            window.scrollTo(0, 0);
+        };
+
+        // --- EXÉCUTION & LIBÉRATION FINALE ---
+        if (useTransition) {
+            const transition = document.startViewTransition(() => performUpdate());
+            await transition.finished;
+
+            // Nettoyage des styles et attributs après animation
+            targetSlots.forEach(el => {
+                el.style.viewTransitionName = '';
+                el.removeAttribute('aria-busy');
+                el.removeAttribute('inert');
+            });
+        } else {
+            performUpdate();
+            targetSlots.forEach(el => {
+                el.removeAttribute('aria-busy');
+                el.removeAttribute('inert');
+            });
+        }
+
+        // Libération de la racine (essentiel pour le cas isFullReplacement)
+        document.documentElement.removeAttribute('aria-busy');
+        document.documentElement.removeAttribute('inert');
+
+        // GESTION DU FOCUS
+        const manageFocus = (container) => {
+            const auto = container.querySelector('[autofocus]');
+            if (auto) {
+                auto.focus();
+            } else {
+                if (!container.hasAttribute('tabindex')) container.setAttribute('tabindex', '-1');
+                container.focus();
+            }
+        };
+
+        if (targetSlots.length > 0) manageFocus(targetSlots[0]);
+
+        document.dispatchEvent(new CustomEvent('ariaml:navigated', { detail: { url } }));
+    }
 }
 
 // Initialisation automatique au chargement du script isolé
