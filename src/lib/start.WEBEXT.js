@@ -11,19 +11,29 @@
         if (pre && pre.textContent.trim().length > 0) {
 			const src = pre.textContent
             
+            document.documentElement.style.display = 'none';
+            
 			const isAria = (raw) => {
 				for(begin of ['<!DOCTYPE aria-ml>', '<aria-ml>', '<aria-ml ', "<aria-ml\n" ])
 					if(raw.indexOf(begin) === 0)
 						return true;
 			}
-			
+			const isAriaFragment = (raw) => {
+				for(begin of ['<!DOCTYPE aria-ml-fragment>', '<aria-ml-fragment>', '<aria-ml-fragment ', "<aria-ml-fragment\n" ])
+					if(raw.indexOf(begin) === 0)
+						return true;
+			}
 			
 			document._needAriaML = isAria(src);
 			if(document._needAriaML) {
 				document.head.innerHTML = '<meta charset="UTF-8">'
 				document.body.innerHTML = src;
 			}
-			document.documentElement.style.display = 'block';
+			
+			if(isAriaFragment(src))
+				location.reload();
+			else
+				document.documentElement.style.display = 'block';
             
             observer.disconnect();
             return true;

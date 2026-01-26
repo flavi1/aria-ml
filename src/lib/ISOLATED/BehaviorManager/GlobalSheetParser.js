@@ -1,68 +1,51 @@
- /**
+/**
  * AriaML GlobalSheetParser.js
- * Version stabilisée pour AriaML v1.4
+ * Version 1.4.1 - Support asynchrone pour orchestration
  */
 const GlobalSheetParser = (type, sheetsSelector, sheetAttribute) => {
-    
     if (typeof window.sheets === 'undefined') {
         window.sheets = {};
     }
 
-    function parseAsCSS(str) {
-        function unminify(code, tab) {
-            const defaultTab = 4;
-            let space = '';
+    // --- GESTION DE LA SYNCHRONISATION ---
+    let resolveReady;
+    const readyPromise = new Promise(resolve => { resolveReady = resolve; });
 
-            if (typeof tab === 'string')
-                tab = /^\d+$/.test(tab) ? parseInt(tab) : defaultTab;
-            if (typeof tab === 'undefined')
-                tab = defaultTab;
-            if (tab < 0)
-                tab = defaultTab;
+    function unminify(code, tab = 4) {
+        let space = ' '.repeat(tab);
+        return code
+            .split('\t').join('    ')
+            .replace(/\s*{\s*/g, ' {\n    ')
+            .replace(/;\s*/g, ';\n    ')
+            .replace(/,\s*/g, ', ')
+            .replace(/[ ]*}\s*/g, '}\n')
+            .replace(/\}\s*(.+)/g, '}\n$1')
+            .replace(/\n    ([^:]+):\s*/g, '\n    $1: ')
+            .replace(/([A-z0-9\)])}/g, '$1;\n}');
+    }
 
-            code = code
-                .split('\t').join('    ')
-                .replace(/\s*{\s*/g, ' {\n    ')
-                .replace(/;\s*/g, ';\n    ')
-                .replace(/,\s*/g, ', ')
-                .replace(/[ ]*}\s*/g, '}\n')
-                .replace(/\}\s*(.+)/g, '}\n$1')
-                .replace(/\n    ([^:]+):\s*/g, '\n    $1: ')
-                .replace(/([A-z0-9\)])}/g, '$1;\n}');
-
-            if (tab !== 4) {
-                for (; tab !== 0; tab--) { space += ' '; }
-                code = code.replace(/\n    /g, '\n' + space);
-            }
-            return code;
-        }
-
-        function transformCSS(inputCSS) {
-            const transformedLines = inputCSS.split('\n').map(line => {
-                const regex = /^(\s*)([a-zA-Z0-9-]+)(\s*):/;
-                return line.replace(regex, (match, whitespace, propertyName, spacing) => {
-                    return `${whitespace}--${propertyName}${spacing}:`;
-                });
+    function transformCSS(inputCSS) {
+        const transformedLines = inputCSS.split('\n').map(line => {
+            const regex = /^(\s*)([a-zA-Z0-9-]+)(\s*):/;
+            return line.replace(regex, (match, whitespace, propertyName, spacing) => {
+                return `${whitespace}--${propertyName}${spacing}:`;
             });
-            let styleContent = transformedLines.join('\n');
-            
-            let doc = document.implementation.createHTMLDocument(""),
-                styleElement = document.createElement("style");
-            styleElement.textContent = styleContent;
-            doc.body.appendChild(styleElement);
-            return styleElement.sheet.cssRules;
-        }
+        });
+        let styleContent = transformedLines.join('\n');
+        let doc = document.implementation.createHTMLDocument(""),
+            styleElement = document.createElement("style");
+        styleElement.textContent = styleContent;
+        doc.body.appendChild(styleElement);
+        return styleElement.sheet.cssRules;
+    }
 
+    function parseAsCSS(str) {
         return transformCSS(unminify(str));
     }
 
     function ruleFactory(r, opts = {}) {
-        const ruleObj = {
-            selector: r.selectorText,
-            properties: {}
-        };
+        const ruleObj = { selector: r.selectorText, properties: {} };
         for (let k in opts) ruleObj[k] = opts[k];
-        
         const propNames = [];
         for (let i in r.style) if (!isNaN(i)) propNames.push(r.style[i]);
         for (let k of propNames) {
@@ -72,52 +55,46 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute) => {
     }
 
     function parseRules(_rules) {
-        if (typeof _rules === 'string')
-            _rules = parseAsCSS(_rules);
-        
+        if (typeof _rules === 'string') _rules = parseAsCSS(_rules);
         const rules = [];
         for (let r of _rules) {
             if (r.constructor.name === 'CSSStyleRule') {
                 rules.push(ruleFactory(r));
             } else if (r.constructor.name === 'CSSMediaRule') {
-                for (let _r of r.cssRules)
-                    rules.push(ruleFactory(_r, { media: r.media }));
+                for (let _r of r.cssRules) rules.push(ruleFactory(_r, { media: r.media }));
             } else if (r.constructor.name === 'CSSSupportsRule') {
-                for (let _r of r.cssRules)
-                    rules.push(ruleFactory(_r, { support: r.conditionText }));
+                for (let _r of r.cssRules) rules.push(ruleFactory(_r, { support: r.conditionText }));
             }
         }
         return rules;
     }
 
-    function loadSheets() {
+    async function loadSheets() {
         window.sheets[type] = new Map();
-        let loadedCounter = 0;
         const sheetsTags = document.querySelectorAll(sheetsSelector);
-        
-        if (sheetsTags.length === 0) return;
+        if (sheetsTags.length === 0) {
+            resolveReady();
+            return;
+        }
 
-        sheetsTags.forEach(async (sheet) => {
-            if (!window.sheets[type].has(sheet)) {
-                if (sheet.hasAttribute(sheetAttribute)) {
-                    let url = sheet.getAttribute(sheetAttribute);
-                    try {
-                        const response = await fetch(url);
-                        const content = await response.text();
-                        window.sheets[type].set(sheet, parseRules(content));
-                    } catch (error) {
-                        // Erreur fetch silencieuse
-                    } finally {
-                        if (++loadedCounter === sheetsTags.length) reset();
-                    }
-                } else {
-                    window.sheets[type].set(sheet, parseRules(sheet.innerHTML));
-                    if (++loadedCounter === sheetsTags.length) reset();
-                }
+        let loadedCounter = 0;
+        for (const sheet of sheetsTags) {
+            if (sheet.hasAttribute(sheetAttribute)) {
+                let url = sheet.getAttribute(sheetAttribute);
+                try {
+                    const response = await fetch(url);
+                    const content = await response.text();
+                    window.sheets[type].set(sheet, parseRules(content));
+                } catch (e) { console.error(`[${type}] Erreur fetch: ${url}`, e); }
             } else {
-                loadedCounter++;
+                window.sheets[type].set(sheet, parseRules(sheet.innerHTML));
             }
-        });
+            loadedCounter++;
+            if (loadedCounter === sheetsTags.length) {
+                reset();
+                resolveReady(); // Signal de fin de chargement initial
+            }
+        }
     }
 
     let abstractComputedValues = null;
@@ -126,14 +103,15 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute) => {
     const MQObservers = {};
 
     function observeMQ(mediaText, MQL) {
-        if (typeof MQObservers[mediaText] === 'undefined') {
+        if (!MQObservers[mediaText]) {
             MQL.addEventListener('change', refresh);
             MQObservers[mediaText] = MQL;
         }
     }
 
     function refresh() {
-        document.dispatchEvent(new CustomEvent(type + '.refresh', { bubbles: true }));
+        abstractComputedValues = null; // Invalidation du cache
+        const eventName = type + '.refresh';
         
         if (!abstractComputedValues) {
             abstractComputedValues = new Map();
@@ -141,18 +119,17 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute) => {
                 for (let rule of propList) {
                     try {
                         for (let el of document.querySelectorAll(rule.selector)) {
-                            let collectedRules = abstractComputedValues.has(el) ? 
-                                abstractComputedValues.get(el) : [];
+                            let collectedRules = abstractComputedValues.get(el) || [];
                             collectedRules.push(rule);
                             abstractComputedValues.set(el, collectedRules);
                         }
-                    } catch(e) { /* Sélecteur invalide */ }
+                    } catch(e) {}
                 }
             }
         }
         
-        let lastValues = new Map();
-        [currentValues, lastValues] = [lastValues, currentValues];
+        let lastValues = new Map(currentValues);
+        currentValues.clear();
         
         for (let [el, collectedRules] of abstractComputedValues) {
             let rulesToApply = {};
@@ -163,52 +140,44 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute) => {
                     observeMQ(r.media.mediaText, mq);
                     if (!mq.matches) apply = false;
                 }
-                if (r.support && apply) {
-                    if (!support(r.support)) apply = false;
-                }
+                if (r.support && apply && !CSS.supports(r.support)) apply = false;
+                
                 if (apply) {
                     for (let k in r.properties) rulesToApply[k] = r.properties[k];
                 }
             }
             
-            if (!initialValues.has(el))
-                el.dispatchEvent(new CustomEvent(type + '.resolveInitials', { bubbles: true }));
-            
+            if (!initialValues.has(el)) el.dispatchEvent(new CustomEvent(type + '.resolveInitials', { bubbles: true }));
             if (initialValues.has(el)) {
                 let initials = initialValues.get(el);
                 for (let k in initials) {
-                    if (typeof rulesToApply[k] === 'undefined' || rulesToApply[k] === 'initial')
-                        rulesToApply[k] = initials[k];
+                    if (typeof rulesToApply[k] === 'undefined' || rulesToApply[k] === 'initial') rulesToApply[k] = initials[k];
                 }
             }
             currentValues.set(el, rulesToApply);
         }
 
         for (let [el, newRules] of currentValues) {
-            const lastRules = lastValues.has(el) ? lastValues.get(el) : initialValues.get(el);
+            const lastRules = lastValues.get(el) || initialValues.get(el) || {};
             el.dispatchEvent(new CustomEvent(type + '.applyRules', {
                 bubbles: true, 
-                detail: { lastRules: lastRules || {}, newRules }
+                detail: { lastRules, newRules }
             }));
         }
+        document.dispatchEvent(new CustomEvent(eventName, { bubbles: true }));
     }
 
-    function clear() { abstractComputedValues = null; }
-    function reset() { clear(); refresh(); }
+    function reset() { abstractComputedValues = null; refresh(); }
 
-    const observer = new MutationObserver((mutationsList) => {
-        let shouldReload = false;
-        for (let mutation of mutationsList) {
-            for (let n of mutation.addedNodes) {
-                if (n.nodeType === Node.ELEMENT_NODE && (n.matches(sheetsSelector) || n.querySelector(sheetsSelector))) 
-                    shouldReload = true;
-            }
-            for (let n of mutation.removedNodes) {
-                if (n.nodeType === Node.ELEMENT_NODE && (n.matches(sheetsSelector) || n.querySelector(sheetsSelector))) 
-                    shouldReload = true;
-            }
-        }
-        if (shouldReload) loadSheets();
+    // Observer pour les feuilles ajoutées dynamiquement
+    const observer = new MutationObserver((mutations) => {
+        let reload = false;
+        mutations.forEach(m => {
+            [...m.addedNodes, ...m.removedNodes].forEach(n => {
+                if (n.nodeType === 1 && (n.matches(sheetsSelector) || n.querySelector(sheetsSelector))) reload = true;
+            });
+        });
+        if (reload) loadSheets();
     });
 
     const init = () => {
@@ -216,57 +185,40 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute) => {
         observer.observe(document.documentElement, { childList: true, subtree: true });
     };
 
-    if (document.readyState === 'loading') {
-        document.addEventListener("DOMContentLoaded", init);
-    } else {
-        init();
-    }
+    if (document.readyState === 'loading') document.addEventListener("DOMContentLoaded", init);
+    else init();
 
     const HTMLElementExtension = {
         getInitial: (el) => (k = null) => {
-            if (initialValues.has(el)) {
-                const properties = initialValues.get(el);
-                return k ? properties[k] : properties;
-            }
-            return k ? undefined : {};
+            const props = initialValues.get(el) || {};
+            return k ? props[k] : props;
         },
         getComputed: (el) => (k = null) => {
-            if (currentValues.has(el)) {
-                const properties = currentValues.get(el);
-                return k ? properties[k] : properties;
-            }
-            return k ? undefined : {};
+            const props = currentValues.get(el) || {};
+            return k ? props[k] : props;
         },
         initials: (el) => HTMLElementExtension.getInitial(el)(),
         computed: (el) => HTMLElementExtension.getComputed(el)()
     };
 
-    const proxyHandler = {
-        get(target, prop) {
-            if (typeof HTMLElementExtension[prop] !== 'undefined')
-                return HTMLElementExtension[prop](target);
-            return undefined;
-        }
-    };
-
     Object.defineProperty(HTMLElement.prototype, type, {
-        get: function() { return new Proxy(this, proxyHandler); },
+        get: function() {
+            const self = this;
+            return {
+                get initials() { return HTMLElementExtension.initials(self); },
+                get computed() { return HTMLElementExtension.computed(self); }
+            };
+        },
         configurable: true
     });
 
-    function support(conditionText) { return CSS.supports(conditionText); }
-    
     return {
+        ready: readyPromise,
         setInitialValue: (el, k, v) => {
-            const properties = initialValues.get(el) || {};
-            if (typeof properties[k] === 'undefined') properties[k] = v;
-            initialValues.set(el, properties);
+            const props = initialValues.get(el) || {};
+            if (typeof props[k] === 'undefined') props[k] = v;
+            initialValues.set(el, props);
         },
-        initialValues,
-        currentValues,
-        clear,
-        refresh,
-        reset,
-        reloadSheets: loadSheets
+        refresh, reset, reloadSheets: loadSheets
     };
 };

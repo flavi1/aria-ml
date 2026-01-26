@@ -1,41 +1,34 @@
 /**
- * behaviorCore
- * Orchestrateur enrichi pour AriaML v1.1.
+ * behaviorCore.js
+ * Orchestrateur v1.1.2 - Synchronisé avec GlobalSheetParser
  */
 const behaviorCore = (() => {
     const definitionFactory = GlobalSheetParser('behavior', 'script[type="text/behavior"]', 'src');
     const initializedElements = new WeakSet();
 
-    // Injection du Proxy Global
-    Object.defineProperty(HTMLElement.prototype, 'behavior', {
-        get() { return definitionFactory.getProperties(this); },
-        configurable: true
-    });
+console.log(definitionFactory)
 
     const supportsElement = (conditionText) => {
         const match = conditionText.match(/element\(<(.*?)>\)/);
         if (!match) return CSS.supports(conditionText);
-        const tagName = match[1];
-        const el = document.createElement(tagName);
+        const el = document.createElement(match[1]);
         return !(el instanceof HTMLUnknownElement);
     };
 
     const applyOrder = (el) => {
         const parent = el.parentElement;
         if (!parent) return;
-
-        const children = Array.from(parent.children);
-        const sorted = children.sort((a, b) => {
-            return (parseInt(a.behavior.order) || 0) - (parseInt(b.behavior.order) || 0);
+        const sorted = Array.from(parent.children).sort((a, b) => {
+            return (parseInt(a.behavior.computed.order) || 0) - (parseInt(b.behavior.computed.order) || 0);
         });
-
         sorted.forEach((node, idx) => {
             if (parent.children[idx] !== node) parent.insertBefore(node, parent.children[idx]);
         });
     };
 
     const processLifecycle = async (el) => {
-        const props = el.behavior;
+        if (!(el instanceof HTMLElement)) return;
+        const props = el.behavior.computed;
         if (!props || Object.keys(props).length === 0) return;
 
         if (!initializedElements.has(el)) {
@@ -47,20 +40,16 @@ const behaviorCore = (() => {
         if (props['on-attach']) await behaviorActions.execute(el, 'on-attach', props['on-attach']);
     };
 
-    /**
-     * Logique Click-Out : Vérifie si le clic est extérieur à l'élément 
-     * ET à toutes ses relations déclarées.
-     */
     const handleClickOut = (e) => {
         document.querySelectorAll('*').forEach(el => {
-            const action = el.behavior['on-click-out'] || el.behavior['click-out'];
+            const props = el.behavior.computed;
+            const action = props['on-click-out'] || props['click-out'];
             if (!action) return;
 
-            // On récupère toutes les cibles liées par des relations
             const relatedNodes = [];
-            Object.keys(el.behavior).forEach(key => {
+            Object.keys(props).forEach(key => {
                 if (key.startsWith('rel-')) {
-                    relatedNodes.push(...behaviorResolvers.resolveChain(el, el.behavior[key]));
+                    relatedNodes.push(...behaviorResolvers.resolveChain(el, props[key]));
                 }
             });
 
@@ -69,17 +58,18 @@ const behaviorCore = (() => {
         });
     };
 
-    const start = () => {
-        const observer = new MutationObserver(m => m.forEach(res => res.addedNodes.forEach(n => {
-            if (n instanceof HTMLElement) processLifecycle(n);
-        })));
+    const start = async () => {
+        // ATTENTE CRUCIALE DES FEUILLES DISTANTES
+        await definitionFactory.ready;
+        
+        const observer = new MutationObserver(m => m.forEach(res => res.addedNodes.forEach(processLifecycle)));
         observer.observe(document.documentElement, { childList: true, subtree: true });
         
         if (window.behaviorKeyboard) behaviorKeyboard.init();
         
         window.addEventListener('resize', () => {
-            document.querySelectorAll('[style*="--order"], [behavior*="order"]').forEach(el => {
-                if (el.behavior.order) applyOrder(el);
+            document.querySelectorAll('*').forEach(el => {
+                if (el.behavior.computed.order) applyOrder(el);
             });
         });
 
@@ -89,12 +79,14 @@ const behaviorCore = (() => {
             document.addEventListener(type, e => {
                 const el = e.target.closest('*');
                 if (!el || !el.behavior) return;
-                const action = el.behavior[type] || el.behavior['on-' + type];
+                const props = el.behavior.computed;
+                const action = props[type] || props['on-' + type];
                 if (action) behaviorActions.execute(el, type, action, e);
             }, true);
         });
 
         document.querySelectorAll('*').forEach(processLifecycle);
+        console.info("[AriaML] behaviorCore démarré.");
     };
 
     window.supportsElement = supportsElement;

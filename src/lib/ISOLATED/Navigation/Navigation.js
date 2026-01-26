@@ -137,7 +137,7 @@ class AriaMLNavigation {
             const cacheKeys = window.NodeCache ? NodeCache.getValidKeys() : [];
 
             const headers = {
-                'Accept': 'text/aria-ml, application/aria-xml, text/html, application/xhtml+xml',
+                'Accept': 'text/aria-ml-fragment, application/aria-xml-fragment, text/aria-ml, application/aria-xml, text/html, application/xhtml+xml',
                 ...(customOptions.headers || {})
             };
 

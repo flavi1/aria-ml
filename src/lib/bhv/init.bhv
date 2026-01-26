@@ -1,1 +1,12 @@
-/* TODO */
+
+[role="tab"] {
+	rel-list: (closest: [role="tablist"]);
+	rel-panels: (root) [role="tabpanel"];
+	on-click: 
+		set(list.branch@aria-selected, "false") 
+		set(self@aria-selected, "true")
+		set(panels@hidden)
+		rm(root.#{{self@aria-controls}}@hidden);
+	kb-arrowright: focus(next);
+	kb-arrowleft: focus(prev);
+}
