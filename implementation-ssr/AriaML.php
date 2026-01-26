@@ -44,7 +44,7 @@ class AriaML {
         ob_start();
         return function() use ($wantsAriaML, $wantsFragment, $testClient, $knownKeys) {
             $buffer = trim(ob_get_clean());
-            $script = '<script src="[https://flavi1.github.io/aria-ml/src/standalone.js](https://flavi1.github.io/aria-ml/src/standalone.js)"></script>';
+            $script = '<script src="https://flavi1.github.io/aria-ml/src/standalone.js"></script>';
             
             if ($wantsAriaML) {
                 $worker = new DOMDocument();
