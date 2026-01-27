@@ -53,7 +53,7 @@ const behaviorCore = (() => {
 		if (!(el instanceof HTMLElement)) return;
 		
 		const props = resolveComputedProperties(el);
-		console.log(`[AriaML] Analyse de l'élément :`, el, `Propriétés calculées :`, props);
+		//console.log(`[AriaML] Analyse de l'élément :`, el, `Propriétés calculées :`, props);
 		
 		el.behavior.computed = props;
 
