@@ -1,6 +1,7 @@
 /**
- * AriaML GlobalSheetParser.js
- * Version 1.4.1 - Support asynchrone pour orchestration
+ * AriaML GlobalSheetParser
+ * Version 1.4.2 - "The Solid Foundation"
+ * Support: CSS Variables transformation, Data-URIs, Media Queries & Supports
  */
 const GlobalSheetParser = (type, sheetsSelector, sheetAttribute) => {
     if (typeof window.sheets === 'undefined') {
@@ -11,27 +12,28 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute) => {
     let resolveReady;
     const readyPromise = new Promise(resolve => { resolveReady = resolve; });
 
-    function unminify(code, tab = 4) {
-        let space = ' '.repeat(tab);
+    /**
+     * Normalise le code pour garantir que chaque propriété est détectable.
+     */
+    function unminify(code) {
         return code
-            .split('\t').join('    ')
-            .replace(/\s*{\s*/g, ' {\n    ')
-            .replace(/;\s*/g, ';\n    ')
-            .replace(/,\s*/g, ', ')
-            .replace(/[ ]*}\s*/g, '}\n')
-            .replace(/\}\s*(.+)/g, '}\n$1')
-            .replace(/\n    ([^:]+):\s*/g, '\n    $1: ')
-            .replace(/([A-z0-9\)])}/g, '$1;\n}');
+            .replace(/\s*{\s*/g, ' {\n')
+            .replace(/;\s*/g, ';\n')
+            .replace(/}\s*/g, '\n}\n')
+            .trim();
     }
 
+    /**
+     * Transforme les propriétés AriaML en variables CSS (--prop)
+     * pour que le navigateur accepte de les parser sans les ignorer.
+     */
     function transformCSS(inputCSS) {
-        const transformedLines = inputCSS.split('\n').map(line => {
-            const regex = /^(\s*)([a-zA-Z0-9-]+)(\s*):/;
-            return line.replace(regex, (match, whitespace, propertyName, spacing) => {
-                return `${whitespace}--${propertyName}${spacing}:`;
-            });
+        const regex = /([\{\;\n]\s*)([a-zA-Z0-9-]+)(\s*):/g;
+        const styleContent = inputCSS.replace(regex, (match, prefix, prop, suffix) => {
+            if (prop.startsWith('--')) return match;
+            return `${prefix}--${prop}${suffix}:`;
         });
-        let styleContent = transformedLines.join('\n');
+
         let doc = document.implementation.createHTMLDocument(""),
             styleElement = document.createElement("style");
         styleElement.textContent = styleContent;
@@ -39,30 +41,32 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute) => {
         return styleElement.sheet.cssRules;
     }
 
-    function parseAsCSS(str) {
-        return transformCSS(unminify(str));
-    }
-
     function ruleFactory(r, opts = {}) {
         const ruleObj = { selector: r.selectorText, properties: {} };
         for (let k in opts) ruleObj[k] = opts[k];
-        const propNames = [];
-        for (let i in r.style) if (!isNaN(i)) propNames.push(r.style[i]);
-        for (let k of propNames) {
-            ruleObj.properties[k.substring(2)] = r.style.getPropertyValue(k);
+        
+        const style = r.style;
+        for (let i = 0; i < style.length; i++) {
+            const propName = style[i];
+            if (propName.startsWith('--')) {
+                // Nettoyage : on retire le préfixe -- et les guillemets de protection
+                const cleanKey = propName.substring(2);
+                const rawValue = style.getPropertyValue(propName).trim();
+                ruleObj.properties[cleanKey] = rawValue.replace(/^["']|["']$/g, '');
+            }
         }
         return ruleObj;
     }
 
     function parseRules(_rules) {
-        if (typeof _rules === 'string') _rules = parseAsCSS(_rules);
+        if (typeof _rules === 'string') _rules = transformCSS(unminify(_rules));
         const rules = [];
         for (let r of _rules) {
-            if (r.constructor.name === 'CSSStyleRule') {
+            if (r instanceof CSSStyleRule) {
                 rules.push(ruleFactory(r));
-            } else if (r.constructor.name === 'CSSMediaRule') {
+            } else if (r instanceof CSSMediaRule) {
                 for (let _r of r.cssRules) rules.push(ruleFactory(_r, { media: r.media }));
-            } else if (r.constructor.name === 'CSSSupportsRule') {
+            } else if (r instanceof CSSSupportsRule) {
                 for (let _r of r.cssRules) rules.push(ruleFactory(_r, { support: r.conditionText }));
             }
         }
@@ -72,32 +76,34 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute) => {
     async function loadSheets() {
         window.sheets[type] = new Map();
         const sheetsTags = document.querySelectorAll(sheetsSelector);
+        
         if (sheetsTags.length === 0) {
             resolveReady();
             return;
         }
 
-        let loadedCounter = 0;
         for (const sheet of sheetsTags) {
+            let content = "";
             if (sheet.hasAttribute(sheetAttribute)) {
                 let url = sheet.getAttribute(sheetAttribute);
                 try {
-					const response = await fetch(url, {
-						headers: { 'Accept': 'text/plain, */*' }
-					});
-                    const content = await response.text();
-console.log(content)
-                    window.sheets[type].set(sheet, parseRules(content));
-                } catch (e) { console.error(`[${type}] Erreur fetch: ${url}`, e); }
+                    // Fetch gère nativement http, https et data:base64
+                    const response = await fetch(url);
+                    content = await response.text();
+                } catch (e) { 
+                    console.error(`[AriaML ${type}] Fail to load: ${url}`, e); 
+                }
             } else {
-                window.sheets[type].set(sheet, parseRules(sheet.innerHTML));
+                // Utilisation de textContent pour préserver les sélecteurs complexes (> , etc)
+                content = sheet.textContent;
             }
-            loadedCounter++;
-            if (loadedCounter === sheetsTags.length) {
-                reset();
-                resolveReady(); // Signal de fin de chargement initial
+            
+            if (content) {
+                window.sheets[type].set(sheet, parseRules(content));
             }
         }
+        reset();
+        resolveReady();
     }
 
     let abstractComputedValues = null;
@@ -113,7 +119,7 @@ console.log(content)
     }
 
     function refresh() {
-        abstractComputedValues = null; // Invalidation du cache
+        abstractComputedValues = null; 
         const eventName = type + '.refresh';
         
         if (!abstractComputedValues) {
@@ -150,16 +156,23 @@ console.log(content)
                 }
             }
             
-            if (!initialValues.has(el)) el.dispatchEvent(new CustomEvent(type + '.resolveInitials', { bubbles: true }));
+            // Gestion des valeurs initiales pour le rollback
+            if (!initialValues.has(el)) {
+                el.dispatchEvent(new CustomEvent(type + '.resolveInitials', { bubbles: true }));
+            }
+
             if (initialValues.has(el)) {
                 let initials = initialValues.get(el);
                 for (let k in initials) {
-                    if (typeof rulesToApply[k] === 'undefined' || rulesToApply[k] === 'initial') rulesToApply[k] = initials[k];
+                    if (typeof rulesToApply[k] === 'undefined' || rulesToApply[k] === 'initial') {
+                        rulesToApply[k] = initials[k];
+                    }
                 }
             }
             currentValues.set(el, rulesToApply);
         }
 
+        // Notification des changements pour les moteurs (Behavior, Navigation, etc)
         for (let [el, newRules] of currentValues) {
             const lastRules = lastValues.get(el) || initialValues.get(el) || {};
             el.dispatchEvent(new CustomEvent(type + '.applyRules', {
@@ -172,48 +185,36 @@ console.log(content)
 
     function reset() { abstractComputedValues = null; refresh(); }
 
-    // Observer pour les feuilles ajoutées dynamiquement
-    const observer = new MutationObserver((mutations) => {
-        let reload = false;
-        mutations.forEach(m => {
-            [...m.addedNodes, ...m.removedNodes].forEach(n => {
-                if (n.nodeType === 1 && (n.matches(sheetsSelector) || n.querySelector(sheetsSelector))) reload = true;
-            });
-        });
-        if (reload) loadSheets();
-    });
-
     const init = () => {
         loadSheets();
-        observer.observe(document.documentElement, { childList: true, subtree: true });
+        const domObserver = new MutationObserver((mutations) => {
+            let reload = false;
+            mutations.forEach(m => {
+                m.addedNodes.forEach(n => {
+                    if (n.nodeType === 1 && (n.matches(sheetsSelector) || n.querySelector(sheetsSelector))) reload = true;
+                });
+            });
+            if (reload) loadSheets();
+        });
+        domObserver.observe(document.documentElement, { childList: true, subtree: true });
     };
 
     if (document.readyState === 'loading') document.addEventListener("DOMContentLoaded", init);
     else init();
 
-    const HTMLElementExtension = {
-        getInitial: (el) => (k = null) => {
-            const props = initialValues.get(el) || {};
-            return k ? props[k] : props;
-        },
-        getComputed: (el) => (k = null) => {
-            const props = currentValues.get(el) || {};
-            return k ? props[k] : props;
-        },
-        initials: (el) => HTMLElementExtension.getInitial(el)(),
-        computed: (el) => HTMLElementExtension.getComputed(el)()
-    };
-
-    Object.defineProperty(HTMLElement.prototype, type, {
-        get: function() {
-            const self = this;
-            return {
-                get initials() { return HTMLElementExtension.initials(self); },
-                get computed() { return HTMLElementExtension.computed(self); }
-            };
-        },
-        configurable: true
-    });
+    // Injection de la propriété Proxy sur HTMLElement (ex: el.behavior)
+    if (!Object.getOwnPropertyDescriptor(HTMLElement.prototype, type)) {
+        Object.defineProperty(HTMLElement.prototype, type, {
+            get: function() {
+                const el = this;
+                return {
+                    get initials() { return initialValues.get(el) || {}; },
+                    get computed() { return currentValues.get(el) || {}; }
+                };
+            },
+            configurable: true
+        });
+    }
 
     return {
         ready: readyPromise,
