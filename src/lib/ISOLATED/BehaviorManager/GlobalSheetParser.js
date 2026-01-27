@@ -3,12 +3,11 @@
  * Version 1.4.5 - "The Triple-Dash Edition"
  * Prefix: ---BHV-
  */
-const GlobalSheetParser = (type, sheetsSelector, sheetAttribute) => {
+const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = '---BHV-') => {
     if (typeof window.sheets === 'undefined') {
         window.sheets = {};
     }
 
-    const BHV_PREFIX = '---BHV-';
     let resolveReady;
     const readyPromise = new Promise(resolve => { resolveReady = resolve; });
 
@@ -24,7 +23,7 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute) => {
         const regex = /([\{\;])\s*([a-zA-Z][a-zA-Z0-9-]+)\s*:/g;
         
         const transformed = cleanCSS.replace(regex, (match, separator, prop) => {
-            return `${separator} ${BHV_PREFIX}${prop}:`;
+            return `${separator} ${PREFIX}${prop}:`;
         });
 
         const styleEl = document.createElement('style');
@@ -44,8 +43,8 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute) => {
         for (let i = 0; i < style.length; i++) {
             const propName = style[i];
             // On ne récupère QUE les propriétés appartenant au Namespace BHV
-            if (propName.startsWith(BHV_PREFIX)) {
-                const cleanKey = propName.substring(BHV_PREFIX.length);
+            if (propName.startsWith(PREFIX)) {
+                const cleanKey = propName.substring(PREFIX.length);
                 let val = style.getPropertyValue(propName).trim();
                 // Nettoyage des guillemets (protection contre le parsing CSS auto-correctif)
                 val = val.replace(/^["']|["']$/g, '');

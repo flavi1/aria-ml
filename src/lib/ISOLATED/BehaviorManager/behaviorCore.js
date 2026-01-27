@@ -1,17 +1,40 @@
 /**
-
  * behaviorCore.js
-
- * Orchestrateur v1.1.2 - Synchronisé avec GlobalSheetParser
-
+ * Orchestrateur v1.3.6 - Mixins & Extension behavior()
  */
-
 const behaviorCore = (() => {
-
     const definitionFactory = GlobalSheetParser('behavior', 'script[type="text/behavior"]', 'src');
     const initializedElements = new WeakSet();
+    const patterns = new Map();
 
-console.log(definitionFactory)
+    console.log(definitionFactory);
+
+    const definePattern = (name, props) => {
+        patterns.set(name, props);
+        console.info(`[AriaML] Pattern défini : ${name}`);
+    };
+
+    const getResolvedProps = (el) => {
+        const rawProps = el.behavior.computed;
+        const resolved = {};
+        const patternName = rawProps['behavior'];
+        const patternProps = (patternName && patterns.has(patternName)) ? patterns.get(patternName) : null;
+
+        const allKeys = new Set([...Object.keys(rawProps), ...(patternProps ? Object.keys(patternProps) : [])]);
+
+        allKeys.forEach(key => {
+            if (key === 'behavior') return;
+            const localValue = rawProps[key];
+            const patternValue = patternProps ? patternProps[key] : null;
+
+            if (localValue && localValue.includes('behavior()') && patternValue) {
+                resolved[key] = localValue.replace(/behavior\(\)/g, patternValue);
+            } else {
+                resolved[key] = localValue !== undefined ? localValue : patternValue;
+            }
+        });
+        return resolved;
+    };
 
     const supportsElement = (conditionText) => {
         const match = conditionText.match(/element\(<(.*?)>\)/);
@@ -24,18 +47,18 @@ console.log(definitionFactory)
         const parent = el.parentElement;
         if (!parent) return;
         const sorted = Array.from(parent.children).sort((a, b) => {
-            return (parseInt(a.behavior.computed.order) || 0) - (parseInt(b.behavior.computed.order) || 0);
+            const orderA = parseInt(getResolvedProps(a).order) || 0;
+            const orderB = parseInt(getResolvedProps(b).order) || 0;
+            return orderA - orderB;
         });
-
         sorted.forEach((node, idx) => {
             if (parent.children[idx] !== node) parent.insertBefore(node, parent.children[idx]);
         });
     };
 
     const processLifecycle = async (el) => {
-//console.log(el)
         if (!(el instanceof HTMLElement)) return;
-        const props = el.behavior.computed;
+        const props = getResolvedProps(el);
         if (!props || Object.keys(props).length === 0) return;
 
         if (!initializedElements.has(el)) {
@@ -49,7 +72,8 @@ console.log(definitionFactory)
 
     const handleClickOut = (e) => {
         document.querySelectorAll('*').forEach(el => {
-            const props = el.behavior.computed;
+            if (!el.behavior) return;
+            const props = getResolvedProps(el);
             const action = props['on-click-out'] || props['click-out'];
             if (!action) return;
 
@@ -66,20 +90,20 @@ console.log(definitionFactory)
     };
 
     const start = async () => {
-console.log('start awaiting BS')
-        // ATTENTE CRUCIALE DES FEUILLES DISTANTES
+        console.log('start awaiting BS');
         await definitionFactory.ready;
+        console.log('end awaiting BS');
         
-console.log('end awaiting BS')
-        
-        const observer = new MutationObserver(m => m.forEach(res => res.addedNodes.forEach(processLifecycle)));
+        const observer = new MutationObserver(m => m.forEach(res => res.addedNodes.forEach(n => {
+            if (n instanceof HTMLElement) processLifecycle(n);
+        })));
         observer.observe(document.documentElement, { childList: true, subtree: true });
         
         if (window.behaviorKeyboard) behaviorKeyboard.init();
         
         window.addEventListener('resize', () => {
             document.querySelectorAll('*').forEach(el => {
-                if (el.behavior.computed.order) applyOrder(el);
+                if (el.behavior && getResolvedProps(el).order) applyOrder(el);
             });
         });
 
@@ -89,7 +113,7 @@ console.log('end awaiting BS')
             document.addEventListener(type, e => {
                 const el = e.target.closest('*');
                 if (!el || !el.behavior) return;
-                const props = el.behavior.computed;
+                const props = getResolvedProps(el);
                 const action = props[type] || props['on-' + type];
                 if (action) behaviorActions.execute(el, type, action, e);
             }, true);
@@ -100,15 +124,10 @@ console.log('end awaiting BS')
     };
 
     window.supportsElement = supportsElement;
-    return { start, definitionFactory };
+    return { start, definitionFactory, definePattern, getResolvedProps };
 })();
 
-
 document.addEventListener('DOMContentLoaded', () => {
-
-console.log('DOMContentLoaded!!!')
-
-behaviorCore.start()
-
+    console.log('DOMContentLoaded!!!');
+    behaviorCore.start();
 });
-
