@@ -1,6 +1,6 @@
 /**
  * AriaML Behavior Actions
- * Bibliothèque des micro-actions et exécuteur de séquences.
+ * Version 1.4.4 - Fix ResolveTarget & Node targeting
  */
 const behaviorActions = (() => {
 
@@ -9,10 +9,18 @@ const behaviorActions = (() => {
         const lastDot = token.lastIndexOf('.');
         const sepIdx = Math.max(lastAt, lastDot);
         
-        // Si sepIdx est -1, c'est que le token ne contient ni @ ni . (erreur de syntaxe ou sélecteur pur)
-        // Si sepIdx est 0, le chemin est vide (ex: "@attr"), on assume "self"
+        // CAS 1 : Cible directe de nœuds (ex: "tabpanel", "self", "list")
+        if (sepIdx === -1) {
+            return { 
+                nodes: behaviorResolvers.resolveChain(el, token), 
+                type: 'nodes', 
+                name: token 
+            };
+        }
+
+        // CAS 2 : Cible de propriété (ex: "self@aria-expanded", "item.active")
         let chainPath = token.substring(0, sepIdx);
-        if (sepIdx <= 0) chainPath = 'self'; 
+        if (chainPath === "") chainPath = 'self'; 
 
         const property = token.substring(sepIdx + 1);
         const type = token[sepIdx] === '@' ? 'attribute' : 'class';
@@ -26,20 +34,21 @@ const behaviorActions = (() => {
 
     const actions = {
         'log': (el, args) => {
-			let logs = []
-			args.forEach((a) => {
-				const resolved = resolveTarget(el, a);
-				logs.push(resolved ? resolved : a);
-			})
-			console.log('[Behavior Sheet Log]', logs)
-			console.log('(from args)', args, ' on ', el)
-		},
+            const logs = args.map(a => resolveTarget(el, a));
+            console.group('[Behavior Sheet Log]');
+            console.log('Targets:', logs);
+            console.log('Source element:', el);
+            console.log('Raw arguments:', args);
+            console.groupEnd();
+        },
+
         'set': (el, args) => {
             const target = resolveTarget(el, args[0]);
             const value = args[1] !== undefined ? args[1] : "";
             target.nodes.forEach(n => {
                 if (target.type === 'attribute') n.setAttribute(target.name, value);
-                else n.classList.add(target.name);
+                else if (target.type === 'class') n.classList.add(target.name);
+                // On ne fait rien si le type est 'nodes' pour un 'set'
             });
         },
 
@@ -129,8 +138,10 @@ const behaviorActions = (() => {
         }
     };
 
-    const execute = async (el, evName, behaviorStr, originalEvent = null) => {
-        // Découpe de la séquence par espace, en ignorant les espaces dans les parenthèses
+	const execute = async (el, evName, behaviorStr, originalEvent = null) => {
+        if (!behaviorStr) return;
+        
+        // Découpe de la séquence par espace (ignore espaces dans parenthèses)
         const sequence = behaviorStr.split(/\s+(?![^()]*\))/);
 
         for (const actionStr of sequence) {
@@ -140,16 +151,18 @@ const behaviorActions = (() => {
             const name = match[1].trim();
             const rawArgs = match[2] || "";
             
-            // Parsing des arguments gérant les virgules et les guillemets
-            const args = rawArgs ? rawArgs.split(/,\s*(?=(?:[^"]*"[^"]*")*[^"]*$)/)
-                                          .map(a => a.replace(/['"]/g, '').trim()) 
-                                 : [];
+            // Parsing des arguments : on sépare par virgule, on nettoie les guillemets
+            const args = rawArgs 
+                ? rawArgs.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(a => a.trim().replace(/^["']|["']$/g, ''))
+                : [];
 
             if (actions[name]) {
                 await actions[name](el, args, originalEvent);
+            } else {
+                console.warn(`[AriaML] Action inconnue: ${name}`);
             }
         }
     };
 
-    return { execute };
+    return { execute, actions };
 })();
