@@ -1,12 +1,12 @@
-
 [role="tab"] {
-	rel-list: (closest: [role="tablist"]);
-	rel-panels: (root) [role="tabpanel"];
-	on-click: 
-		set(list.branch@aria-selected, "false") 
+	rel-tablist: "(closest: [role=tablist]) > [role=tab]";
+	rel-tabpanel: "(root) #{{aria-controls}}";
+	on-click:
+		log(self, tablist, tabpanel)
+		set(tablist@aria-selected, "false")
+		set(tablist.tabpanel@hidden)
 		set(self@aria-selected, "true")
-		set(panels@hidden)
-		rm(root.#{{self@aria-controls}}@hidden);
+		rm(tabpanel@hidden);
 	kb-arrowright: focus(next);
 	kb-arrowleft: focus(prev);
 }

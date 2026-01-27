@@ -27,7 +27,7 @@ console.log(definitionFactory)
     };
 
     const processLifecycle = async (el) => {
-console.log(el)
+//console.log(el)
         if (!(el instanceof HTMLElement)) return;
         const props = el.behavior.computed;
         if (!props || Object.keys(props).length === 0) return;
@@ -97,4 +97,7 @@ console.log('end awaiting BS')
     return { start, definitionFactory };
 })();
 
-document.addEventListener('DOMContentLoaded', behaviorCore.start);
+document.addEventListener('DOMContentLoaded', () => {
+	console.log('DOMContentLoaded!!!')
+	behaviorCore.start()
+});
