@@ -70,11 +70,12 @@
 					"lib/ISOLATED/Navigation/Form.js",
 					"lib/ISOLATED/Navigation/Navigation.js",
 					
-					"lib/ISOLATED/BehaviorManager/behaviorActions.js",
-					"lib/ISOLATED/BehaviorManager/behaviorKeyboard.js",
-					"lib/ISOLATED/BehaviorManager/behaviorResolvers.js",
+					"lib/ISOLATED/BehaviorManager/Actions.js",
+					"lib/ISOLATED/BehaviorManager/Keyboard.js",
+					"lib/ISOLATED/BehaviorManager/Resolvers.js",
 					"lib/ISOLATED/BehaviorManager/GlobalSheetParser.js",
-					"lib/ISOLATED/BehaviorManager/behaviorCore.js"
+					"lib/ISOLATED/BehaviorManager/Core.js",
+					"lib/ISOLATED/BehaviorManager/Patterns.js"
 				],
 				"css": ["lib/css/init.css"],
 				"bhv": ["lib/bhv/init.bhv"]

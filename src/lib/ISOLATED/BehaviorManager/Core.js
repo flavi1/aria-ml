@@ -1,5 +1,5 @@
 /**
- * behaviorCore.js
+ * Core.js
  * Orchestrateur v1.3.6 - Mixins & Extension behavior()
  */
 const behaviorCore = (() => {
