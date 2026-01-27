@@ -1,3 +1,10 @@
+
+[role="tab"] {
+	on-click: log(self);
+}
+
+
+/*
 [role="tab"] {
 	rel-tablist: "(closest: [role=tablist]) > [role=tab]";
 	rel-tabpanel: "(root) #{{aria-controls}}";
@@ -10,3 +17,4 @@
 	kb-arrowright: focus(next);
 	kb-arrowleft: focus(prev);
 }
+*/
