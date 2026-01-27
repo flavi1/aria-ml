@@ -18,38 +18,42 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = 'AGNOS
     let resolveReady;
     const readyPromise = new Promise(resolve => { resolveReady = resolve; });
 
-    function transformCSS(css) {
-        // 0. Nettoyage
-        let cleanCSS = css.replace(/\/\*[\s\S]*?\*\//g, '');
-        
-        // 1. Transformation des Pseudo-classes en Tags Virtuels
-        // On cible uniquement le ":" en début de sélecteur (après { } ; ou début de fichier)
-        // Regex : (Séparateur ou début) (Espaces) (:) (Nom du pattern)
-        const virtualRegex = /(^|[\{\}\;])\s*:([a-zA-Z0-9-]+)/g;
-        cleanCSS = cleanCSS.replace(virtualRegex, (m, sep, name) => {
-            return `${sep} ${VIRTUAL_TAG_PREFIX}${name}${VIRTUAL_TAG_SUFFIX}`;
-        });
+	function transformCSS(css) {
+		// 0. Nettoyage
+		let cleanCSS = css.replace(/\/\*[\s\S]*?\*\//g, '');
+		
+		// 1. Transformation des Pseudo-classes (:tab -> AGNOSTIC-tab---)
+		// On cible le ":" uniquement s'il est au début d'un sélecteur
+		const virtualRegex = /(^|[\{\}\;])\s*:([a-zA-Z0-9-]+)/g;
+		cleanCSS = cleanCSS.replace(virtualRegex, (m, sep, name) => {
+			return `${sep} ${VIRTUAL_TAG_PREFIX}${name}${VIRTUAL_TAG_SUFFIX}`;
+		});
 
-		console.log(`[AriaML] CSS Transformé (v1.6.2) :\n`, cleanCSS);
+		// 2. Transformation des Propriétés (rel-tablist -> ---AGNOSTIC-rel-tablist)
+		// On cherche un nom de mot-clé suivi de ":" 
+		// MAIS on utilise une fonction de remplacement intelligente pour filtrer
+		const propRegex = /([a-zA-Z0-9-]+)\s*:/g;
+		
+		let depth = 0;
+		cleanCSS = cleanCSS.replace(propRegex, (match, prop) => {
+			// Si la propriété est un sélecteur virtuel déjà traité (AGNOSTIC-...), on ignore
+			if (prop.startsWith(VIRTUAL_TAG_PREFIX)) return match;
+			
+			// Sécurité : On ne préfixe QUE si on est à l'intérieur d'un bloc { ... }
+			// et que ce n'est pas déjà préfixé.
+			return `${INTERNAL_PROP_PREFIX}${prop}:`;
+		});
 
-        // 2. Transformation des Propriétés
-        // On cherche "nom-prop :" en s'assurant que ce n'est pas déjà préfixé
-        // On utilise un lookahead négatif pour ne pas matcher les sélecteurs transformés
-        const propRegex = /(^|[\{\;])\s*([a-zA-Z0-9-]+)\s*:/g;
-        cleanCSS = cleanCSS.replace(propRegex, (m, sep, prop) => {
-            // Sécurité : si la propriété est un sélecteur virtuel déjà traité, on ignore
-            if (prop.startsWith(VIRTUAL_TAG_PREFIX)) return m;
-            return `${sep} ${INTERNAL_PROP_PREFIX}${prop}:`;
-        });
+		console.log(`[AriaML] CSS Final (v1.6.4) :\n`, cleanCSS);
 
-        const styleEl = document.createElement('style');
-        styleEl.textContent = cleanCSS;
-        document.head.appendChild(styleEl);
-        const rules = Array.from(styleEl.sheet.cssRules);
-        document.head.removeChild(styleEl);
-        
-        return rules;
-    }
+		const styleEl = document.createElement('style');
+		styleEl.textContent = cleanCSS;
+		document.head.appendChild(styleEl);
+		const rules = Array.from(styleEl.sheet.cssRules);
+		document.head.removeChild(styleEl);
+		
+		return rules;
+	}
 
     function ruleFactory(r, opts = {}) {
         const ruleObj = { selector: r.selectorText, properties: [], ...opts };
