@@ -19,18 +19,25 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = 'AGNOS
 	function transformCSS(css) {
 		let cleanCSS = css.replace(/\/\*[\s\S]*?\*\//g, '');
 		
-		// 1. :pattern => BHV-pattern---
-		const virtualRegex = /:([a-zA-Z0-9-]+)/g;
-		cleanCSS = cleanCSS.replace(virtualRegex, `${PREFIX}-$1${VIRTUAL_TAG_SUFFIX}`);
-
-		// 2. Propriétés (rel-tablist => ---BHV-rel-tablist)
-		// On assouplit la regex pour attraper toutes les propriétés AriaML
-		const propRegex = /([\{\;])\s*([a-zA-Z0-9-]+)\s*:/g; 
-		cleanCSS = cleanCSS.replace(propRegex, (m, sep, prop) => {
-			return `${sep} ${PREFIX_INTERNAL}${prop}:`;
+		// 1. Transformation des Pseudo-classes (Virtual Rules)
+		// On ne transforme que si le ":" est en début de bloc ou de ligne
+		// (pour éviter de transformer "on-click:log")
+		const virtualRegex = /(^|[\{\}\;])\s*:([a-zA-Z0-9-]+)/g;
+		cleanCSS = cleanCSS.replace(virtualRegex, (m, separator, name) => {
+			return `${separator} ${BHV_PREFIX}-${name}${VIRTUAL_TAG_SUFFIX}`;
 		});
 
-		console.log(`[AriaML] CSS Transformé pour ${type} :`, cleanCSS); // DEBUG
+		// 2. Transformation des Propriétés
+		// On cherche "nom-prop :" mais on s'assure qu'il n'y a pas de "-" devant
+		// pour ne pas préfixer deux fois.
+		const propRegex = /(^|[\{\;])\s*([a-zA-Z0-9-]+)\s*:/g;
+		cleanCSS = cleanCSS.replace(propRegex, (m, separator, prop) => {
+			// Si c'est déjà un sélecteur transformé (BHV-...), on ne touche pas
+			if (prop.startsWith(BHV_PREFIX)) return m;
+			return `${separator} ${PREFIX_INTERNAL}${prop}:`;
+		});
+
+		console.log(`[AriaML] CSS Transformé (v1.6.2) :\n`, cleanCSS);
 
 		const styleEl = document.createElement('style');
 		styleEl.textContent = cleanCSS;
