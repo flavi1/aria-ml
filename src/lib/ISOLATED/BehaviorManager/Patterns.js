@@ -3,7 +3,7 @@ behaviorCore.definePattern('tab', {
     'rel-tablist': '(closest: [role=tablist])',
     'rel-tabpanel': '(root) #{aria-controls}',
     'on-click': `set(tablist@aria-selected, "false")
-        set(tablist.tabpanel@hidden)
+        set(tablist/tabpanel@hidden)
         set(self@aria-selected, "true")
         rm(tabpanel@hidden)`,
     'kb-arrowright': 'focus(next)',
