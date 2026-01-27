@@ -127,20 +127,16 @@ const behaviorCore = (() => {
     return { start, definitionFactory, definePattern, getResolvedProps };
 })();
 
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOMContentLoaded!!!');
+// Fonction de lancement sécurisée
+const initAriaML = () => {
+    console.log('[AriaML] Lancement du moteur...');
     behaviorCore.start();
-});
+};
 
-
-behaviorCore.definePattern('tab', {
-    'rel-tablist': '(closest: [role=tablist])',
-    'rel-tabpanel': '(root) #{aria-controls}',
-    'on-click': `log(self, tablist, tabpanel)
-        set(tablist@aria-selected, "false")
-        set(tablist.tabpanel@hidden)
-        set(self@aria-selected, "true")
-        rm(tabpanel@hidden)`,
-    'kb-arrowright': 'focus(next)',
-    'kb-arrowleft': 'focus(prev)'
-});
+// Si le DOM est déjà prêt (ou en cours de finalisation), on lance immédiatement
+if (document.readyState === 'interactive' || document.readyState === 'complete') {
+    initAriaML();
+} else {
+    // Sinon, on attend sagement l'événement
+    document.addEventListener('DOMContentLoaded', initAriaML);
+}
