@@ -4,33 +4,27 @@
  */
 const behaviorCore = (() => {
     // Initialisation du Parser Agnostique
-    const definitionFactory = GlobalSheetParser('behavior', 'script[type="text/behavior"]', 'src', '---BHV-');
+	const definitionFactory = GlobalSheetParser('behavior', 'script[type="text/behavior"]', 'src', 'BHV');
     const initializedElements = new WeakSet();
 
     /**
      * ALGORITHME DE RÉSOLUTION : Expansion des patterns (Mixins)
      * Transforme les règles brutes en propriétés finales calculées.
      */
+	// BHV devient le pivot du namespace
+    
     const resolveComputedProperties = (el) => {
         const finalProps = {};
-        const appliedRules = el.behavior.rules || []; // Fourni par le Parser
-        const virtuals = (window.sheets.behavior && window.sheets.behavior.virtualRules) 
-                         ? window.sheets.behavior.virtualRules 
-                         : new Map();
+        const rules = el.behavior.rules || [];
+        const virtuals = window.sheets.behavior.virtualRules;
 
-        appliedRules.forEach(rule => {
-            // On itère sur le tableau d'objets {key, value} pour garantir l'ordre
+        rules.forEach(rule => {
             rule.properties.forEach(prop => {
                 if (prop.key === 'behavior') {
-                    // Injection du pattern (Virtual Rule)
-                    const patternName = prop.value;
-                    const patternProps = virtuals.get(patternName);
-                    if (patternProps) {
-                        // On fusionne les propriétés du pattern dans l'état actuel
-                        Object.assign(finalProps, patternProps);
-                    }
+                    // Le pattern a été stocké sous son nom court (ex: 'tab')
+                    const pattern = virtuals.get(prop.value);
+                    if (pattern) Object.assign(finalProps, pattern);
                 } else {
-                    // Affectation ou Surcharge directe
                     finalProps[prop.key] = prop.value;
                 }
             });
