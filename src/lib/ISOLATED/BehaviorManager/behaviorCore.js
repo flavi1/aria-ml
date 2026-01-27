@@ -50,14 +50,12 @@ const behaviorCore = (() => {
      * CYCLE DE VIE
      */
     const processLifecycle = async (el) => {
-        if (!(el instanceof HTMLElement)) return;
-
-        // 1. Résolution des propriétés (Patterns + Local)
-        const props = resolveComputedProperties(el);
-        
-        // 2. Persistance dans l'accessoire behavior
-        // On utilise Object.defineProperty ou une affectation directe si déjà présent
-        el.behavior.computed = props;
+		if (!(el instanceof HTMLElement)) return;
+		
+		const props = resolveComputedProperties(el);
+		console.log(`[AriaML] Analyse de l'élément :`, el, `Propriétés calculées :`, props);
+		
+		el.behavior.computed = props;
 
         if (!props || Object.keys(props).length === 0) return;
 
