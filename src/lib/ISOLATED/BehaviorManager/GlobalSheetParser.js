@@ -16,26 +16,30 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = 'AGNOS
     let resolveReady;
     const readyPromise = new Promise(resolve => { resolveReady = resolve; });
 
-    function transformCSS(css) {
-        let cleanCSS = css.replace(/\/\*[\s\S]*?\*\//g, '');
-        
-        // 1. Transformation des pseudo-classes en Custom Elements factices
-        // :tab => BHV-tab---
-        const virtualRegex = /:([a-zA-Z0-9-]+)/g;
-        cleanCSS = cleanCSS.replace(virtualRegex, `${PREFIX}-$1${VIRTUAL_TAG_SUFFIX}`);
+	function transformCSS(css) {
+		let cleanCSS = css.replace(/\/\*[\s\S]*?\*\//g, '');
+		
+		// 1. :pattern => BHV-pattern---
+		const virtualRegex = /:([a-zA-Z0-9-]+)/g;
+		cleanCSS = cleanCSS.replace(virtualRegex, `${BHV_PREFIX}-$1${VIRTUAL_TAG_SUFFIX}`);
 
-        // 2. Préfixage des propriétés (---BHV-prop)
-        const propRegex = /([\{\;])\s*([a-zA-Z][a-zA-Z0-9-]+)\s*:/g;
-        cleanCSS = cleanCSS.replace(propRegex, (m, sep, prop) => `${sep} ${PREFIX_INTERNAL}${prop}:`);
+		// 2. Propriétés (rel-tablist => ---BHV-rel-tablist)
+		// On assouplit la regex pour attraper toutes les propriétés AriaML
+		const propRegex = /([\{\;])\s*([a-zA-Z0-9-]+)\s*:/g; 
+		cleanCSS = cleanCSS.replace(propRegex, (m, sep, prop) => {
+			return `${sep} ${PREFIX_INTERNAL}${prop}:`;
+		});
 
-        const styleEl = document.createElement('style');
-        styleEl.textContent = cleanCSS;
-        document.head.appendChild(styleEl);
-        const rules = Array.from(styleEl.sheet.cssRules);
-        document.head.removeChild(styleEl);
-        
-        return rules;
-    }
+		console.log(`[AriaML] CSS Transformé pour ${type} :`, cleanCSS); // DEBUG
+
+		const styleEl = document.createElement('style');
+		styleEl.textContent = cleanCSS;
+		document.head.appendChild(styleEl);
+		const rules = Array.from(styleEl.sheet.cssRules);
+		document.head.removeChild(styleEl);
+		
+		return rules;
+	}
 
     function ruleFactory(r, opts = {}) {
         const ruleObj = { selector: r.selectorText, properties: [], ...opts };
