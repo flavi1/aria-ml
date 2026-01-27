@@ -1,100 +1,78 @@
 /**
- * AriaML GlobalSheetParser v1.6
- * "The Native-Virtual Hybrid"
+ * AriaML GlobalSheetParser v1.5
+ * "The Agnostic Collector"
  */
-const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = 'AGNOSTIC') => {
-	if (!window.sheets) window.sheets = {};
+const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, BHV_PREFIX = '---BHV-') => {
+    if (!window.sheets) window.sheets = {};
     
+    // Structure de stockage partagée
     window.sheets[type] = {
-        virtualRules: new Map(), 
-        rawSheets: new Map()
+        virtualRules: new Map(), // :tab => { props }
+        rawSheets: new Map()     // <script> => [ {selector, properties, media...} ]
     };
 
-    // Constantes de namespace basées sur le PREFIX fourni
-    const INTERNAL_PROP_PREFIX = `---${PREFIX}-`; 
-    const VIRTUAL_TAG_PREFIX = `${PREFIX}-`;
-    const VIRTUAL_TAG_SUFFIX = '---';
-    
     let resolveReady;
     const readyPromise = new Promise(resolve => { resolveReady = resolve; });
 
-	function transformCSS(css) {
-		// 0. Nettoyage
-		let cleanCSS = css.replace(/\/\*[\s\S]*?\*\//g, '');
-		
-		// 1. Transformation des Pseudo-classes (:tab -> AGNOSTIC-tab---)
-		// On cible le ":" uniquement s'il est au début d'un sélecteur
-		const virtualRegex = /(^|[\{\}\;])\s*:([a-zA-Z0-9-]+)/g;
-		cleanCSS = cleanCSS.replace(virtualRegex, (m, sep, name) => {
-			return `${sep} ${VIRTUAL_TAG_PREFIX}${name}${VIRTUAL_TAG_SUFFIX}`;
-		});
+    function transformAndExtract(css) {
+        let cleanCSS = css.replace(/\/\*[\s\S]*?\*\//g, '');
+        
+        // 1. Extraction des Virtual Rules (:pattern)
+        // On cherche :nom { ... }
+        const virtualRegex = /:([a-zA-Z0-9-]+)\s*\{([^}]*)\}/g;
+        let match;
+        while ((match = virtualRegex.exec(cleanCSS)) !== null) {
+            const name = match[1];
+            const content = match[2];
+            const props = {};
+            // Extraction simple des propriétés internes
+            content.split(';').forEach(pair => {
+                let [k, ...v] = pair.split(':');
+                if (k && v.length) props[k.trim()] = v.join(':').trim();
+            });
+            window.sheets[type].virtualRules.set(name, props);
+        }
 
-		// 2. Transformation des Propriétés (rel-tablist -> ---AGNOSTIC-rel-tablist)
-		// On cherche un nom de mot-clé suivi de ":" 
-		// MAIS on utilise une fonction de remplacement intelligente pour filtrer
-		const propRegex = /([a-zA-Z0-9-]+)\s*:/g;
-		
-		let depth = 0;
-		cleanCSS = cleanCSS.replace(propRegex, (match, prop) => {
-			// Si la propriété est un sélecteur virtuel déjà traité (AGNOSTIC-...), on ignore
-			if (prop.startsWith(VIRTUAL_TAG_PREFIX)) return match;
-			
-			// Sécurité : On ne préfixe QUE si on est à l'intérieur d'un bloc { ... }
-			// et que ce n'est pas déjà préfixé.
-			return `${INTERNAL_PROP_PREFIX}${prop}:`;
-		});
+        // 2. Nettoyage du CSS pour le moteur natif (on retire les patterns)
+        let realCSS = cleanCSS.replace(virtualRegex, '');
 
-		console.log(`[AriaML] CSS Final (v1.6.4) :\n`, cleanCSS);
+        // 3. Préfixage des propriétés réelles
+        const propRegex = /([\{\;])\s*([a-zA-Z][a-zA-Z0-9-]+)\s*:/g;
+        realCSS = realCSS.replace(propRegex, (m, sep, prop) => `${sep} ${BHV_PREFIX}${prop}:`);
 
-		const styleEl = document.createElement('style');
-		styleEl.textContent = cleanCSS;
-		document.head.appendChild(styleEl);
-		const rules = Array.from(styleEl.sheet.cssRules);
-		document.head.removeChild(styleEl);
-		
-		return rules;
-	}
+        // 4. Validation via CSSOM
+        const styleEl = document.createElement('style');
+        styleEl.textContent = realCSS;
+        document.head.appendChild(styleEl);
+        const rules = Array.from(styleEl.sheet.cssRules);
+        document.head.removeChild(styleEl);
+        
+        return rules;
+    }
 
     function ruleFactory(r, opts = {}) {
         const ruleObj = { selector: r.selectorText, properties: [], ...opts };
         const style = r.style;
+        // IMPORTANT : On garde l'ordre de déclaration original
         for (let i = 0; i < style.length; i++) {
             const name = style[i];
-            // On ne récupère que ce qui appartient au namespace AGNOSTIC
-            if (name.startsWith(INTERNAL_PROP_PREFIX)) {
+            if (name.startsWith(BHV_PREFIX)) {
                 let val = style.getPropertyValue(name).trim().replace(/^["']|["']$/g, '');
-                ruleObj.properties.push({ 
-                    key: name.substring(INTERNAL_PROP_PREFIX.length), 
-                    value: val 
-                });
+                ruleObj.properties.push({ key: name.substring(BHV_PREFIX.length), value: val });
             }
         }
         return ruleObj;
     }
 
-    function parseRules(rulesArray) {
-        const virtuals = window.sheets[type].virtualRules;
-        const realRules = [];
-
+    function parseToInternal(rulesArray) {
+        const parsed = [];
         rulesArray.forEach(r => {
-            if (!(r instanceof CSSStyleRule)) return;
-            
-            const selector = r.selectorText.toUpperCase();
-            const prefixMatch = VIRTUAL_TAG_PREFIX.toUpperCase();
-            const suffixMatch = VIRTUAL_TAG_SUFFIX.toUpperCase();
-
-            // Identification des Virtual Rules via les marqueurs AGNOSTIC
-            if (selector.startsWith(prefixMatch) && selector.endsWith(suffixMatch)) {
-                const patternName = r.selectorText.slice(VIRTUAL_TAG_PREFIX.length, -VIRTUAL_TAG_SUFFIX.length);
-                const props = {};
-                const parsed = ruleFactory(r);
-                parsed.properties.forEach(p => props[p.key] = p.value);
-                virtuals.set(patternName, props);
-            } else {
-                realRules.push(ruleFactory(r));
+            if (r instanceof CSSStyleRule) parsed.push(ruleFactory(r));
+            else if (r instanceof CSSMediaRule) {
+                Array.from(r.cssRules).forEach(_r => parsed.push(ruleFactory(_r, { media: r.media })));
             }
         });
-        return realRules;
+        return parsed;
     }
 
     async function loadSheets() {
@@ -107,8 +85,8 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = 'AGNOS
                 : tag.textContent;
             
             if (content.trim()) {
-                const rules = transformCSS(content);
-                window.sheets[type].rawSheets.set(tag, parseRules(rules));
+                const rules = transformAndExtract(content);
+                window.sheets[type].rawSheets.set(tag, parseToInternal(rules));
             }
         }
         refresh();
@@ -118,10 +96,12 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = 'AGNOS
     let currentValues = new Map();
     function refresh() {
         const elementMap = new Map();
+        // Collecte toutes les règles s'appliquant à chaque élément
         window.sheets[type].rawSheets.forEach(rules => {
             rules.forEach(rule => {
                 try {
                     document.querySelectorAll(rule.selector).forEach(el => {
+                        if (rule.media && !window.matchMedia(rule.media.mediaText).matches) return;
                         let list = elementMap.get(el) || [];
                         list.push(rule);
                         elementMap.set(el, list);
@@ -129,20 +109,28 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = 'AGNOS
                 } catch(e) {}
             });
         });
+
         currentValues = elementMap;
         for (let [el, rules] of currentValues) {
             el.dispatchEvent(new CustomEvent(type + '.applyRules', { detail: { rules } }));
         }
     }
 
-    const init = () => loadSheets();
+    const init = () => { loadSheets(); };
     if (document.readyState === 'loading') document.addEventListener("DOMContentLoaded", init); else init();
 
     if (!Object.getOwnPropertyDescriptor(HTMLElement.prototype, type)) {
         Object.defineProperty(HTMLElement.prototype, type, {
-            get: function() { return { get rules() { return currentValues.get(this) || []; }, computed: {} }; },
+            get: function() {
+                return { 
+                    get rules() { return currentValues.get(this) || []; },
+                    // Le 'computed' sera injecté par le Core
+                    computed: {} 
+                };
+            },
             configurable: true
         });
     }
+
     return { ready: readyPromise, refresh };
 };
