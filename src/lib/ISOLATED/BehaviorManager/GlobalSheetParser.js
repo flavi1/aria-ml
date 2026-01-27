@@ -24,7 +24,7 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = 'AGNOS
 		// (pour éviter de transformer "on-click:log")
 		const virtualRegex = /(^|[\{\}\;])\s*:([a-zA-Z0-9-]+)/g;
 		cleanCSS = cleanCSS.replace(virtualRegex, (m, separator, name) => {
-			return `${separator} ${BHV_PREFIX}-${name}${VIRTUAL_TAG_SUFFIX}`;
+			return `${separator} ${PREFIX}-${name}${VIRTUAL_TAG_SUFFIX}`;
 		});
 
 		// 2. Transformation des Propriétés
@@ -33,7 +33,7 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = 'AGNOS
 		const propRegex = /(^|[\{\;])\s*([a-zA-Z0-9-]+)\s*:/g;
 		cleanCSS = cleanCSS.replace(propRegex, (m, separator, prop) => {
 			// Si c'est déjà un sélecteur transformé (BHV-...), on ne touche pas
-			if (prop.startsWith(BHV_PREFIX)) return m;
+			if (prop.startsWith(PREFIX)) return m;
 			return `${separator} ${PREFIX_INTERNAL}${prop}:`;
 		});
 
