@@ -1,103 +1,172 @@
 /**
  * behaviorCore.js
- * Orchestrateur v1.1.2 - Synchronisé avec GlobalSheetParser
+ * Orchestrateur v1.2.0 - Intelligence de Résolution & Patterns
  */
 const behaviorCore = (() => {
-    const definitionFactory = GlobalSheetParser('behavior', 'script[type="text/behavior"]', 'src');
+    // Initialisation du Parser Agnostique
+    const definitionFactory = GlobalSheetParser('behavior', 'script[type="text/behavior"]', 'src', '---BHV-');
     const initializedElements = new WeakSet();
 
-console.log(definitionFactory)
+    /**
+     * ALGORITHME DE RÉSOLUTION : Expansion des patterns (Mixins)
+     * Transforme les règles brutes en propriétés finales calculées.
+     */
+    const resolveComputedProperties = (el) => {
+        const finalProps = {};
+        const appliedRules = el.behavior.rules || []; // Fourni par le Parser
+        const virtuals = (window.sheets.behavior && window.sheets.behavior.virtualRules) 
+                         ? window.sheets.behavior.virtualRules 
+                         : new Map();
 
-    const supportsElement = (conditionText) => {
-        const match = conditionText.match(/element\(<(.*?)>\)/);
-        if (!match) return CSS.supports(conditionText);
-        const el = document.createElement(match[1]);
-        return !(el instanceof HTMLUnknownElement);
+        appliedRules.forEach(rule => {
+            // On itère sur le tableau d'objets {key, value} pour garantir l'ordre
+            rule.properties.forEach(prop => {
+                if (prop.key === 'behavior') {
+                    // Injection du pattern (Virtual Rule)
+                    const patternName = prop.value;
+                    const patternProps = virtuals.get(patternName);
+                    if (patternProps) {
+                        // On fusionne les propriétés du pattern dans l'état actuel
+                        Object.assign(finalProps, patternProps);
+                    }
+                } else {
+                    // Affectation ou Surcharge directe
+                    finalProps[prop.key] = prop.value;
+                }
+            });
+        });
+        return finalProps;
     };
 
     const applyOrder = (el) => {
         const parent = el.parentElement;
         if (!parent) return;
+        const props = el.behavior.computed;
         const sorted = Array.from(parent.children).sort((a, b) => {
-            return (parseInt(a.behavior.computed.order) || 0) - (parseInt(b.behavior.computed.order) || 0);
+            const orderA = parseInt(a.behavior.computed?.order) || 0;
+            const orderB = parseInt(b.behavior.computed?.order) || 0;
+            return orderA - orderB;
         });
         sorted.forEach((node, idx) => {
             if (parent.children[idx] !== node) parent.insertBefore(node, parent.children[idx]);
         });
     };
 
+    /**
+     * CYCLE DE VIE
+     */
     const processLifecycle = async (el) => {
-//console.log(el)
         if (!(el instanceof HTMLElement)) return;
-        const props = el.behavior.computed;
+
+        // 1. Résolution des propriétés (Patterns + Local)
+        const props = resolveComputedProperties(el);
+        
+        // 2. Persistance dans l'accessoire behavior
+        // On utilise Object.defineProperty ou une affectation directe si déjà présent
+        el.behavior.computed = props;
+
         if (!props || Object.keys(props).length === 0) return;
 
+        // 3. Initialisation (une seule fois)
         if (!initializedElements.has(el)) {
-            if (props.init) await behaviorActions.execute(el, 'init', props.init);
+            if (props.init) {
+                if (typeof behaviorActions !== 'undefined') {
+                    await behaviorActions.execute(el, 'init', props.init);
+                }
+            }
             initializedElements.add(el);
         }
         
+        // 4. Mise à jour structurelle (Order)
         if (props.order) applyOrder(el);
-        if (props['on-attach']) await behaviorActions.execute(el, 'on-attach', props['on-attach']);
+        
+        // 5. Hook d'attachement
+        if (props['on-attach'] && typeof behaviorActions !== 'undefined') {
+            await behaviorActions.execute(el, 'on-attach', props['on-attach']);
+        }
     };
 
+    /**
+     * GESTION DES ÉVÉNEMENTS
+     */
     const handleClickOut = (e) => {
         document.querySelectorAll('*').forEach(el => {
+            if (!el.behavior) return;
             const props = el.behavior.computed;
             const action = props['on-click-out'] || props['click-out'];
             if (!action) return;
 
             const relatedNodes = [];
             Object.keys(props).forEach(key => {
-                if (key.startsWith('rel-')) {
+                if (key.startsWith('rel-') && typeof behaviorResolvers !== 'undefined') {
                     relatedNodes.push(...behaviorResolvers.resolveChain(el, props[key]));
                 }
             });
 
             const isInside = el.contains(e.target) || relatedNodes.some(n => n.contains(e.target));
-            if (!isInside) behaviorActions.execute(el, 'click-out', action, e);
+            if (!isInside && typeof behaviorActions !== 'undefined') {
+                behaviorActions.execute(el, 'click-out', action, e);
+            }
         });
     };
 
     const start = async () => {
-console.log('start awaiting BS')
-        // ATTENTE CRUCIALE DES FEUILLES DISTANTES
+        console.info("[AriaML] behaviorCore : Attente des définitions...");
         await definitionFactory.ready;
         
-console.log('end awaiting BS')
-        
-        const observer = new MutationObserver(m => m.forEach(res => res.addedNodes.forEach(processLifecycle)));
-        observer.observe(document.documentElement, { childList: true, subtree: true });
-        
+        // Branchement sur l'événement du Parser pour réactivité
+        document.addEventListener('behavior.applyRules', (e) => {
+            processLifecycle(e.target);
+        });
+
+        // Initialisation du Keyboard si présent
         if (window.behaviorKeyboard) behaviorKeyboard.init();
         
+        // Resize pour la propriété 'order'
         window.addEventListener('resize', () => {
             document.querySelectorAll('*').forEach(el => {
-                if (el.behavior.computed.order) applyOrder(el);
+                if (el.behavior?.computed?.order) applyOrder(el);
             });
         });
 
         document.addEventListener('click', handleClickOut, true);
 
+        // Délégation des événements standards
         ['click', 'focus', 'blur', 'input', 'change'].forEach(type => {
             document.addEventListener(type, e => {
                 const el = e.target.closest('*');
                 if (!el || !el.behavior) return;
+                
                 const props = el.behavior.computed;
                 const action = props[type] || props['on-' + type];
-                if (action) behaviorActions.execute(el, type, action, e);
+                if (action && typeof behaviorActions !== 'undefined') {
+                    behaviorActions.execute(el, type, action, e);
+                }
             }, true);
         });
 
+        // Premier passage sur le DOM existant
         document.querySelectorAll('*').forEach(processLifecycle);
-        console.info("[AriaML] behaviorCore démarré.");
+
+        // Observation des mutations futures
+        const observer = new MutationObserver(m => {
+            m.forEach(record => {
+                record.addedNodes.forEach(node => {
+                    if (node.nodeType === 1) processLifecycle(node);
+                });
+            });
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+
+        console.info("[AriaML] behaviorCore v1.2.0 démarré avec support Patterns.");
     };
 
-    window.supportsElement = supportsElement;
-    return { start, definitionFactory };
+    return { start, definitionFactory, refresh: () => definitionFactory.refresh() };
 })();
 
-document.addEventListener('DOMContentLoaded', () => {
-	console.log('DOMContentLoaded!!!')
-	behaviorCore.start()
-});
+// Lancement automatique
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => behaviorCore.start());
+} else {
+    behaviorCore.start();
+}
