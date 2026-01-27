@@ -1,7 +1,6 @@
 /**
  * AriaML Behavior Resolvers
- * Version 1.4.4 - Relation-First Priority & Typed Returns
- * Fix: Empêche la confusion entre sélecteurs CSS et Relations AriaML
+ * Version 1.4.6 - Full Logs & Flat Recursion
  */
 const behaviorResolvers = (() => {
     // Niveau de log : 0: Off, 1: Error, 2: Info (Chains), 3: Debug (Segments)
@@ -74,7 +73,7 @@ const behaviorResolvers = (() => {
         povElements.forEach(item => {
             if (!item.querySelectorAll) return;
             try {
-                // Utilisation de scope pour limiter la recherche aux descendants directs si besoin
+                log(3, `Querying selector: "${selector}" from`, item);
                 const matches = item.querySelectorAll(selector);
                 results.push(...Array.from(matches));
             } catch (e) { log(1, "Invalid selector", selector); }
@@ -84,7 +83,6 @@ const behaviorResolvers = (() => {
 
     /**
      * Cœur de la résolution de chaîne
-     * Retourne désormais une collection typée pour behaviorActions
      */
     const resolveChain = (startEl, chainStr) => {
         if (!chainStr) return { nodes: [startEl], type: 'nodes', name: 'self' };
@@ -92,6 +90,8 @@ const behaviorResolvers = (() => {
         log(2, `Resolving chain: "${chainStr}" from`, startEl);
 
         const interpolated = interpolate(startEl, chainStr);
+        if (interpolated !== chainStr) log(3, `After interpolation: "${interpolated}"`);
+
         const segments = interpolated.split(/\.(?![^()]*\))/);
         let currentElements = [startEl];
         let lastSegmentName = 'self';
@@ -102,29 +102,27 @@ const behaviorResolvers = (() => {
             let nextElements = [];
 
             for (const el of currentElements) {
-                // IMPORTANT : On utilise behaviorCore.getResolvedProps pour prendre en compte les Patterns
+                // On utilise behaviorCore pour gérer les patterns
                 const props = (window.behaviorCore) ? behaviorCore.getResolvedProps(el) : (el.behavior?.computed || {});
-                
-                // Priorité 1 : Alias de relation explicite (rel-xxx)
                 const relDef = props[`rel-${segment}`];
                 
                 if (relDef) {
                     log(3, `Found relation alias "rel-${segment}" -> "${relDef}"`);
-                    // Récursion pour résoudre la définition de la relation
-                    const result = resolveChain(el, relDef);
+                    // RÉCURSION : On extrait uniquement les nodes pour la suite de la boucle
+					const result = resolveChain(el, relDef);
                     nextElements.push(...result.nodes);
                 } 
-                // Priorité 2 : Mot-clé interne
                 else if (segment === 'self') {
                     nextElements.push(el);
                 } 
-                // Priorité 3 : Sélecteur CSS / XPath simulé
                 else {
                     nextElements.push(...resolveSegment(el, segment));
                 }
             }
 
+            // Déduplication pour éviter les boucles ou les doublons de sélection
             currentElements = [...new Set(nextElements)];
+            
             if (currentElements.length === 0) {
                 log(2, `Chain broken at segment: "${segment}"`);
                 break;
@@ -133,7 +131,6 @@ const behaviorResolvers = (() => {
         
         log(2, `Chain resolved to ${currentElements.length} node(s)`);
         
-        // On retourne l'objet structuré que behaviorActions attend
         return {
             nodes: currentElements,
             type: 'nodes',
