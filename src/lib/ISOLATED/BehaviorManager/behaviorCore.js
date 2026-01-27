@@ -1,8 +1,13 @@
 /**
+
  * behaviorCore.js
+
  * Orchestrateur v1.1.2 - Synchronisé avec GlobalSheetParser
+
  */
+
 const behaviorCore = (() => {
+
     const definitionFactory = GlobalSheetParser('behavior', 'script[type="text/behavior"]', 'src');
     const initializedElements = new WeakSet();
 
@@ -21,6 +26,7 @@ console.log(definitionFactory)
         const sorted = Array.from(parent.children).sort((a, b) => {
             return (parseInt(a.behavior.computed.order) || 0) - (parseInt(b.behavior.computed.order) || 0);
         });
+
         sorted.forEach((node, idx) => {
             if (parent.children[idx] !== node) parent.insertBefore(node, parent.children[idx]);
         });
@@ -97,7 +103,12 @@ console.log('end awaiting BS')
     return { start, definitionFactory };
 })();
 
+
 document.addEventListener('DOMContentLoaded', () => {
-	console.log('DOMContentLoaded!!!')
-	behaviorCore.start()
+
+console.log('DOMContentLoaded!!!')
+
+behaviorCore.start()
+
 });
+
