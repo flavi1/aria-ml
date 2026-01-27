@@ -73,7 +73,7 @@ const behaviorResolvers = (() => {
             if (!item.querySelectorAll) return;
 			try {
 				// On cherche les descendants qui matchent le sélecteur
-				const matches = item.querySelectorAll(selector); 
+				const matches = item.querySelectorAll(selector);
 				results.push(...Array.from(matches));
 			} catch (e) { log(1, "Invalid selector", selector); }
         });

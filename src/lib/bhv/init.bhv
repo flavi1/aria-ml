@@ -1,10 +1,4 @@
 
-[role="tab"] {
-	rel-tablist: "(closest: [role=tablist]) > [role=tab]";
-	on-click: log(self, tablist);
-}
-
-
 /*
 [role="tab"] {
 	rel-tablist: "(closest: [role=tablist]) > [role=tab]";
