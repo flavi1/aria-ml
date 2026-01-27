@@ -1,6 +1,7 @@
 /**
  * AriaML Behavior Resolvers
- * Version 1.4.3 - Syntax {attr} & Debug Verbosity
+ * Version 1.4.4 - Relation-First Priority & Typed Returns
+ * Fix: Empêche la confusion entre sélecteurs CSS et Relations AriaML
  */
 const behaviorResolvers = (() => {
     // Niveau de log : 0: Off, 1: Error, 2: Info (Chains), 3: Debug (Segments)
@@ -36,6 +37,7 @@ const behaviorResolvers = (() => {
      * Résout les variables {attribut} sur l'élément source.
      */
     const interpolate = (el, path) => {
+        if (typeof path !== 'string') return path;
         return path.replace(/\{(.*?)\}/g, (_, attr) => {
             const val = el.getAttribute(attr) || "";
             log(3, `Interpolation {${attr}} -> "${val}"`);
@@ -71,48 +73,57 @@ const behaviorResolvers = (() => {
         const results = [];
         povElements.forEach(item => {
             if (!item.querySelectorAll) return;
-			try {
-				// On cherche les descendants qui matchent le sélecteur
-				const matches = item.querySelectorAll(selector);
-				results.push(...Array.from(matches));
-			} catch (e) { log(1, "Invalid selector", selector); }
+            try {
+                // Utilisation de scope pour limiter la recherche aux descendants directs si besoin
+                const matches = item.querySelectorAll(selector);
+                results.push(...Array.from(matches));
+            } catch (e) { log(1, "Invalid selector", selector); }
         });
         return results;
     };
 
+    /**
+     * Cœur de la résolution de chaîne
+     * Retourne désormais une collection typée pour behaviorActions
+     */
     const resolveChain = (startEl, chainStr) => {
-        if (!chainStr) return [startEl];
+        if (!chainStr) return { nodes: [startEl], type: 'nodes', name: 'self' };
 
         log(2, `Resolving chain: "${chainStr}" from`, startEl);
 
-        // 1. Interpolation des variables {attr}
         const interpolated = interpolate(startEl, chainStr);
-        if (interpolated !== chainStr) log(3, `After interpolation: "${interpolated}"`);
-
-        // 2. Découpage par points (uniquement hors parenthèses)
         const segments = interpolated.split(/\.(?![^()]*\))/);
         let currentElements = [startEl];
+        let lastSegmentName = 'self';
 
         for (const segment of segments) {
+            lastSegmentName = segment;
             log(3, `Processing segment: "${segment}"`);
             let nextElements = [];
+
             for (const el of currentElements) {
-                // Accès via le Proxy .behavior
-                const props = el.behavior.computed;
-                const relDef = props[`rel-${segment}`] || props[segment];
+                // IMPORTANT : On utilise behaviorCore.getResolvedProps pour prendre en compte les Patterns
+                const props = (window.behaviorCore) ? behaviorCore.getResolvedProps(el) : (el.behavior?.computed || {});
+                
+                // Priorité 1 : Alias de relation explicite (rel-xxx)
+                const relDef = props[`rel-${segment}`];
                 
                 if (relDef) {
-                    log(3, `Found relation alias "${segment}" -> "${relDef}"`);
-                    nextElements.push(...resolveChain(el, relDef));
+                    log(3, `Found relation alias "rel-${segment}" -> "${relDef}"`);
+                    // Récursion pour résoudre la définition de la relation
+                    const result = resolveChain(el, relDef);
+                    nextElements.push(...result.nodes);
                 } 
+                // Priorité 2 : Mot-clé interne
                 else if (segment === 'self') {
                     nextElements.push(el);
                 } 
+                // Priorité 3 : Sélecteur CSS / XPath simulé
                 else {
                     nextElements.push(...resolveSegment(el, segment));
                 }
             }
-            // Déduplication
+
             currentElements = [...new Set(nextElements)];
             if (currentElements.length === 0) {
                 log(2, `Chain broken at segment: "${segment}"`);
@@ -121,7 +132,13 @@ const behaviorResolvers = (() => {
         }
         
         log(2, `Chain resolved to ${currentElements.length} node(s)`);
-        return currentElements;
+        
+        // On retourne l'objet structuré que behaviorActions attend
+        return {
+            nodes: currentElements,
+            type: 'nodes',
+            name: lastSegmentName
+        };
     };
 
     return { resolveChain };
