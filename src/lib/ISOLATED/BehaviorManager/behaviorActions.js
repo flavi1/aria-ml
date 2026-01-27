@@ -32,6 +32,7 @@ const behaviorActions = (() => {
 				logs.push(resolved ? resolved : a);
 			})
 			console.log('[Behavior Sheet Log]', logs)
+			console.log('(from args)', args, ' on ', el)
 		},
         'set': (el, args) => {
             const target = resolveTarget(el, args[0]);
