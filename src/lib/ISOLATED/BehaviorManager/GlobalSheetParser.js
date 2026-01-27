@@ -82,7 +82,9 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute) => {
             if (sheet.hasAttribute(sheetAttribute)) {
                 let url = sheet.getAttribute(sheetAttribute);
                 try {
-                    const response = await fetch(url);
+					const response = await fetch(url, {
+						headers: { 'Accept': 'text/plain, */*' }
+					});
                     const content = await response.text();
                     window.sheets[type].set(sheet, parseRules(content));
                 } catch (e) { console.error(`[${type}] Erreur fetch: ${url}`, e); }
