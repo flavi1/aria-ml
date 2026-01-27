@@ -1,48 +1,35 @@
 /**
- * AriaML GlobalSheetParser v1.5
- * "The Agnostic Collector"
+ * AriaML GlobalSheetParser v1.6
+ * "The Native-Virtual Hybrid"
  */
-const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, BHV_PREFIX = '---BHV-') => {
+const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = 'AGNOSTIC') => {
     if (!window.sheets) window.sheets = {};
     
-    // Structure de stockage partagée
     window.sheets[type] = {
-        virtualRules: new Map(), // :tab => { props }
-        rawSheets: new Map()     // <script> => [ {selector, properties, media...} ]
+        virtualRules: new Map(), 
+        rawSheets: new Map()
     };
 
+    const PREFIX_INTERNAL = `---${PREFIX}-`; // ---BHV-prop
+    const VIRTUAL_TAG_SUFFIX = '---';           // BHV-pattern---
+    
     let resolveReady;
     const readyPromise = new Promise(resolve => { resolveReady = resolve; });
 
-    function transformAndExtract(css) {
+    function transformCSS(css) {
         let cleanCSS = css.replace(/\/\*[\s\S]*?\*\//g, '');
         
-        // 1. Extraction des Virtual Rules (:pattern)
-        // On cherche :nom { ... }
-        const virtualRegex = /:([a-zA-Z0-9-]+)\s*\{([^}]*)\}/g;
-        let match;
-        while ((match = virtualRegex.exec(cleanCSS)) !== null) {
-            const name = match[1];
-            const content = match[2];
-            const props = {};
-            // Extraction simple des propriétés internes
-            content.split(';').forEach(pair => {
-                let [k, ...v] = pair.split(':');
-                if (k && v.length) props[k.trim()] = v.join(':').trim();
-            });
-            window.sheets[type].virtualRules.set(name, props);
-        }
+        // 1. Transformation des pseudo-classes en Custom Elements factices
+        // :tab => BHV-tab---
+        const virtualRegex = /:([a-zA-Z0-9-]+)/g;
+        cleanCSS = cleanCSS.replace(virtualRegex, `${PREFIX}-$1${VIRTUAL_TAG_SUFFIX}`);
 
-        // 2. Nettoyage du CSS pour le moteur natif (on retire les patterns)
-        let realCSS = cleanCSS.replace(virtualRegex, '');
-
-        // 3. Préfixage des propriétés réelles
+        // 2. Préfixage des propriétés (---BHV-prop)
         const propRegex = /([\{\;])\s*([a-zA-Z][a-zA-Z0-9-]+)\s*:/g;
-        realCSS = realCSS.replace(propRegex, (m, sep, prop) => `${sep} ${BHV_PREFIX}${prop}:`);
+        cleanCSS = cleanCSS.replace(propRegex, (m, sep, prop) => `${sep} ${PREFIX_INTERNAL}${prop}:`);
 
-        // 4. Validation via CSSOM
         const styleEl = document.createElement('style');
-        styleEl.textContent = realCSS;
+        styleEl.textContent = cleanCSS;
         document.head.appendChild(styleEl);
         const rules = Array.from(styleEl.sheet.cssRules);
         document.head.removeChild(styleEl);
@@ -53,26 +40,37 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, BHV_PREFIX = '-
     function ruleFactory(r, opts = {}) {
         const ruleObj = { selector: r.selectorText, properties: [], ...opts };
         const style = r.style;
-        // IMPORTANT : On garde l'ordre de déclaration original
         for (let i = 0; i < style.length; i++) {
             const name = style[i];
-            if (name.startsWith(BHV_PREFIX)) {
+            if (name.startsWith(PREFIX_INTERNAL)) {
                 let val = style.getPropertyValue(name).trim().replace(/^["']|["']$/g, '');
-                ruleObj.properties.push({ key: name.substring(BHV_PREFIX.length), value: val });
+                ruleObj.properties.push({ key: name.substring(PREFIX_INTERNAL.length), value: val });
             }
         }
         return ruleObj;
     }
 
-    function parseToInternal(rulesArray) {
-        const parsed = [];
+    function parseRules(rulesArray) {
+        const virtuals = window.sheets[type].virtualRules;
+        const realRules = [];
+        const virtualPrefix = `${PREFIX}-`;
+
         rulesArray.forEach(r => {
-            if (r instanceof CSSStyleRule) parsed.push(ruleFactory(r));
-            else if (r instanceof CSSMediaRule) {
-                Array.from(r.cssRules).forEach(_r => parsed.push(ruleFactory(_r, { media: r.media })));
+            if (!(r instanceof CSSStyleRule)) return;
+            
+            // Si le sélecteur est un élément virtuel BHV-xxx---
+            if (r.selectorText.startsWith(virtualPrefix) && r.selectorText.endsWith(VIRTUAL_TAG_SUFFIX)) {
+                const patternName = r.selectorText.slice(virtualPrefix.length, -VIRTUAL_TAG_SUFFIX.length);
+                const props = {};
+                const parsed = ruleFactory(r);
+                parsed.properties.forEach(p => props[p.key] = p.value);
+                virtuals.set(patternName, props);
+            } else {
+                // C'est une règle réelle (DOM)
+                realRules.push(ruleFactory(r));
             }
         });
-        return parsed;
+        return realRules;
     }
 
     async function loadSheets() {
@@ -85,8 +83,8 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, BHV_PREFIX = '-
                 : tag.textContent;
             
             if (content.trim()) {
-                const rules = transformAndExtract(content);
-                window.sheets[type].rawSheets.set(tag, parseToInternal(rules));
+                const rules = transformCSS(content);
+                window.sheets[type].rawSheets.set(tag, parseRules(rules));
             }
         }
         refresh();
@@ -96,12 +94,10 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, BHV_PREFIX = '-
     let currentValues = new Map();
     function refresh() {
         const elementMap = new Map();
-        // Collecte toutes les règles s'appliquant à chaque élément
         window.sheets[type].rawSheets.forEach(rules => {
             rules.forEach(rule => {
                 try {
                     document.querySelectorAll(rule.selector).forEach(el => {
-                        if (rule.media && !window.matchMedia(rule.media.mediaText).matches) return;
                         let list = elementMap.get(el) || [];
                         list.push(rule);
                         elementMap.set(el, list);
@@ -109,28 +105,20 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, BHV_PREFIX = '-
                 } catch(e) {}
             });
         });
-
         currentValues = elementMap;
         for (let [el, rules] of currentValues) {
             el.dispatchEvent(new CustomEvent(type + '.applyRules', { detail: { rules } }));
         }
     }
 
-    const init = () => { loadSheets(); };
+    const init = () => loadSheets();
     if (document.readyState === 'loading') document.addEventListener("DOMContentLoaded", init); else init();
 
     if (!Object.getOwnPropertyDescriptor(HTMLElement.prototype, type)) {
         Object.defineProperty(HTMLElement.prototype, type, {
-            get: function() {
-                return { 
-                    get rules() { return currentValues.get(this) || []; },
-                    // Le 'computed' sera injecté par le Core
-                    computed: {} 
-                };
-            },
+            get: function() { return { get rules() { return currentValues.get(this) || []; }, computed: {} }; },
             configurable: true
         });
     }
-
     return { ready: readyPromise, refresh };
 };
