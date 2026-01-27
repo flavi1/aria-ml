@@ -21,7 +21,7 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = 'AGNOS
 		
 		// 1. :pattern => BHV-pattern---
 		const virtualRegex = /:([a-zA-Z0-9-]+)/g;
-		cleanCSS = cleanCSS.replace(virtualRegex, `${BHV_PREFIX}-$1${VIRTUAL_TAG_SUFFIX}`);
+		cleanCSS = cleanCSS.replace(virtualRegex, `${PREFIX}-$1${VIRTUAL_TAG_SUFFIX}`);
 
 		// 2. Propriétés (rel-tablist => ---BHV-rel-tablist)
 		// On assouplit la regex pour attraper toutes les propriétés AriaML
