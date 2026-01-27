@@ -3,59 +3,66 @@
  * "The Native-Virtual Hybrid"
  */
 const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = 'AGNOSTIC') => {
-    if (!window.sheets) window.sheets = {};
+	if (!window.sheets) window.sheets = {};
     
     window.sheets[type] = {
         virtualRules: new Map(), 
         rawSheets: new Map()
     };
 
-    const PREFIX_INTERNAL = `---${PREFIX}-`; // ---BHV-prop
-    const VIRTUAL_TAG_SUFFIX = '---';           // BHV-pattern---
+    // Constantes de namespace basées sur le PREFIX fourni
+    const INTERNAL_PROP_PREFIX = `---${PREFIX}-`; 
+    const VIRTUAL_TAG_PREFIX = `${PREFIX}-`;
+    const VIRTUAL_TAG_SUFFIX = '---';
     
     let resolveReady;
     const readyPromise = new Promise(resolve => { resolveReady = resolve; });
 
-	function transformCSS(css) {
-		let cleanCSS = css.replace(/\/\*[\s\S]*?\*\//g, '');
-		
-		// 1. Transformation des Pseudo-classes (Virtual Rules)
-		// On ne transforme que si le ":" est en début de bloc ou de ligne
-		// (pour éviter de transformer "on-click:log")
-		const virtualRegex = /(^|[\{\}\;])\s*:([a-zA-Z0-9-]+)/g;
-		cleanCSS = cleanCSS.replace(virtualRegex, (m, separator, name) => {
-			return `${separator} ${PREFIX}-${name}${VIRTUAL_TAG_SUFFIX}`;
-		});
-
-		// 2. Transformation des Propriétés
-		// On cherche "nom-prop :" mais on s'assure qu'il n'y a pas de "-" devant
-		// pour ne pas préfixer deux fois.
-		const propRegex = /(^|[\{\;])\s*([a-zA-Z0-9-]+)\s*:/g;
-		cleanCSS = cleanCSS.replace(propRegex, (m, separator, prop) => {
-			// Si c'est déjà un sélecteur transformé (BHV-...), on ne touche pas
-			if (prop.startsWith(PREFIX)) return m;
-			return `${separator} ${PREFIX_INTERNAL}${prop}:`;
-		});
+    function transformCSS(css) {
+        // 0. Nettoyage
+        let cleanCSS = css.replace(/\/\*[\s\S]*?\*\//g, '');
+        
+        // 1. Transformation des Pseudo-classes en Tags Virtuels
+        // On cible uniquement le ":" en début de sélecteur (après { } ; ou début de fichier)
+        // Regex : (Séparateur ou début) (Espaces) (:) (Nom du pattern)
+        const virtualRegex = /(^|[\{\}\;])\s*:([a-zA-Z0-9-]+)/g;
+        cleanCSS = cleanCSS.replace(virtualRegex, (m, sep, name) => {
+            return `${sep} ${VIRTUAL_TAG_PREFIX}${name}${VIRTUAL_TAG_SUFFIX}`;
+        });
 
 		console.log(`[AriaML] CSS Transformé (v1.6.2) :\n`, cleanCSS);
 
-		const styleEl = document.createElement('style');
-		styleEl.textContent = cleanCSS;
-		document.head.appendChild(styleEl);
-		const rules = Array.from(styleEl.sheet.cssRules);
-		document.head.removeChild(styleEl);
-		
-		return rules;
-	}
+        // 2. Transformation des Propriétés
+        // On cherche "nom-prop :" en s'assurant que ce n'est pas déjà préfixé
+        // On utilise un lookahead négatif pour ne pas matcher les sélecteurs transformés
+        const propRegex = /(^|[\{\;])\s*([a-zA-Z0-9-]+)\s*:/g;
+        cleanCSS = cleanCSS.replace(propRegex, (m, sep, prop) => {
+            // Sécurité : si la propriété est un sélecteur virtuel déjà traité, on ignore
+            if (prop.startsWith(VIRTUAL_TAG_PREFIX)) return m;
+            return `${sep} ${INTERNAL_PROP_PREFIX}${prop}:`;
+        });
+
+        const styleEl = document.createElement('style');
+        styleEl.textContent = cleanCSS;
+        document.head.appendChild(styleEl);
+        const rules = Array.from(styleEl.sheet.cssRules);
+        document.head.removeChild(styleEl);
+        
+        return rules;
+    }
 
     function ruleFactory(r, opts = {}) {
         const ruleObj = { selector: r.selectorText, properties: [], ...opts };
         const style = r.style;
         for (let i = 0; i < style.length; i++) {
             const name = style[i];
-            if (name.startsWith(PREFIX_INTERNAL)) {
+            // On ne récupère que ce qui appartient au namespace AGNOSTIC
+            if (name.startsWith(INTERNAL_PROP_PREFIX)) {
                 let val = style.getPropertyValue(name).trim().replace(/^["']|["']$/g, '');
-                ruleObj.properties.push({ key: name.substring(PREFIX_INTERNAL.length), value: val });
+                ruleObj.properties.push({ 
+                    key: name.substring(INTERNAL_PROP_PREFIX.length), 
+                    value: val 
+                });
             }
         }
         return ruleObj;
@@ -64,20 +71,22 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = 'AGNOS
     function parseRules(rulesArray) {
         const virtuals = window.sheets[type].virtualRules;
         const realRules = [];
-        const virtualPrefix = `${PREFIX}-`;
 
         rulesArray.forEach(r => {
             if (!(r instanceof CSSStyleRule)) return;
             
-            // Si le sélecteur est un élément virtuel BHV-xxx---
-            if (r.selectorText.startsWith(virtualPrefix) && r.selectorText.endsWith(VIRTUAL_TAG_SUFFIX)) {
-                const patternName = r.selectorText.slice(virtualPrefix.length, -VIRTUAL_TAG_SUFFIX.length);
+            const selector = r.selectorText.toUpperCase();
+            const prefixMatch = VIRTUAL_TAG_PREFIX.toUpperCase();
+            const suffixMatch = VIRTUAL_TAG_SUFFIX.toUpperCase();
+
+            // Identification des Virtual Rules via les marqueurs AGNOSTIC
+            if (selector.startsWith(prefixMatch) && selector.endsWith(suffixMatch)) {
+                const patternName = r.selectorText.slice(VIRTUAL_TAG_PREFIX.length, -VIRTUAL_TAG_SUFFIX.length);
                 const props = {};
                 const parsed = ruleFactory(r);
                 parsed.properties.forEach(p => props[p.key] = p.value);
                 virtuals.set(patternName, props);
             } else {
-                // C'est une règle réelle (DOM)
                 realRules.push(ruleFactory(r));
             }
         });
