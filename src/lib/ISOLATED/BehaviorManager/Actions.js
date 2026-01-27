@@ -7,22 +7,17 @@ const behaviorActions = (() => {
     /**
      * Analyse le token pour déterminer la cible, le type d'accès et la propriété
      */
-    const resolveTarget = (el, token) => {
+	const resolveTarget = (el, token) => {
         const lastAt = token.lastIndexOf('@');
         const lastDot = token.lastIndexOf('.');
         const sepIdx = Math.max(lastAt, lastDot);
         
-        // CAS 1 : Cible structurelle (ex: "tabpanel", "self", "parent")
+        // Si aucun @ ou . en fin de token, c'est une chaîne de relations pure
         if (sepIdx === -1) {
-            const result = behaviorResolvers.resolveChain(el, token);
-            return { 
-                nodes: result.nodes, 
-                type: 'nodes', 
-                name: token 
-            };
+            return behaviorResolvers.resolveChain(el, token);
         }
 
-        // CAS 2 : Cible de propriété (ex: "self@aria-expanded", "item.active")
+        // Sinon, on sépare le chemin (qui peut contenir des /) de la propriété finale
         let chainPath = token.substring(0, sepIdx);
         if (chainPath === "") chainPath = 'self'; 
 
@@ -37,7 +32,7 @@ const behaviorActions = (() => {
             name: property 
         };
     };
-
+    
     const actions = {
         'log': (el, args) => {
             const logs = args.map(a => resolveTarget(el, a));
@@ -145,31 +140,37 @@ const behaviorActions = (() => {
         }
     };
 
-    const execute = async (el, evName, behaviorStr, originalEvent = null) => {
-        if (!behaviorStr) return;
-        
-        // Découpe par espace en protégeant ce qui est entre parenthèses
-        const sequence = behaviorStr.split(/\s+(?![^()]*\))/);
+	const execute = async (el, evName, behaviorStr, originalEvent = null) => {
+		if (!behaviorStr) return;
+		
+		// On sépare les actions par les espaces, 
+		// mais on ignore les espaces à l'intérieur des parenthèses
+		const sequence = behaviorStr.split(/\s+(?![^()]*\))/);
 
-        for (const actionStr of sequence) {
-            const match = actionStr.match(/^([\w-]+)(?:\((.*)\))?$/);
-            if (!match) continue;
+		for (const actionStr of sequence) {
+			// Extraction du nom de l'action et du contenu des parenthèses
+			const match = actionStr.match(/^([\w-]+)(?:\((.*)\))?$/);
+			if (!match) continue;
 
-            const name = match[1].trim();
-            const rawArgs = match[2] || "";
-            
-            // Parsing des arguments avec support des guillemets
-            const args = rawArgs 
-                ? rawArgs.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(a => a.trim().replace(/^["']|["']$/g, ''))
-                : [];
+			const name = match[1].trim();
+			const rawArgs = match[2] || "";
+			
+			// Séparation des arguments par virgule, 
+			// en ignorant les virgules à l'intérieur des chaînes entre guillemets
+			const args = rawArgs 
+				? rawArgs.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+						 .map(a => a.trim().replace(/^["']|["']$/g, ''))
+				: [];
 
-            if (actions[name]) {
-                await actions[name](el, args, originalEvent);
-            } else {
-                console.warn(`[AriaML] Action inconnue: ${name}`);
-            }
-        }
-    };
+			if (actions[name]) {
+				// Support de l'asynchronisme (ex: pour l'action 'wait')
+				await actions[name](el, args, originalEvent);
+			} else {
+				console.warn(`[AriaML] Action inconnue: ${name}`);
+			}
+		}
+	};
+
 
     return { execute, actions };
 })();

@@ -43,99 +43,61 @@ const behaviorResolvers = (() => {
             return val;
         });
     };
-
-    const resolveSegment = (el, segmentStr) => {
+    
+	const resolveSegment = (el, segmentStr) => {
         let pov = el;
         let selector = segmentStr.trim();
-
         if (selector.startsWith('(')) {
             const endPov = selector.indexOf(')');
             const povToken = selector.slice(1, endPov).trim();
             selector = selector.slice(endPov + 1).trim();
-            
             const [key, ...argParts] = povToken.split(':');
             const arg = argParts.join(':').trim();
-            
-            if (povMap[key]) {
-                pov = povMap[key](el, arg);
-                log(3, `POV "${key}" resolved`, pov);
-            }
+            if (povMap[key]) pov = povMap[key](el, arg);
         }
-
         if (!pov) return [];
-        
-        const povElements = (typeof pov[Symbol.iterator] === 'function' && !(pov instanceof HTMLElement)) 
-            ? Array.from(pov) : [pov];
-
+        const povElements = (typeof pov[Symbol.iterator] === 'function' && !(pov instanceof HTMLElement)) ? Array.from(pov) : [pov];
         if (!selector) return povElements;
-
         const results = [];
         povElements.forEach(item => {
             if (!item.querySelectorAll) return;
             try {
-                log(3, `Querying selector: "${selector}" from`, item);
-                const matches = item.querySelectorAll(selector);
-                results.push(...Array.from(matches));
+                results.push(...Array.from(item.querySelectorAll(selector)));
             } catch (e) { log(1, "Invalid selector", selector); }
         });
         return results;
     };
 
-    /**
-     * Cœur de la résolution de chaîne
-     */
     const resolveChain = (startEl, chainStr) => {
         if (!chainStr) return { nodes: [startEl], type: 'nodes', name: 'self' };
-
-        log(2, `Resolving chain: "${chainStr}" from`, startEl);
+        log(2, `Resolving chain: "${chainStr}"`);
 
         const interpolated = interpolate(startEl, chainStr);
-        if (interpolated !== chainStr) log(3, `After interpolation: "${interpolated}"`);
-
-        const segments = interpolated.split(/\.(?![^()]*\))/);
+        // On découpe par / (Slash)
+        const segments = interpolated.split('/');
         let currentElements = [startEl];
         let lastSegmentName = 'self';
 
         for (const segment of segments) {
+            if (!segment) continue;
             lastSegmentName = segment;
-            log(3, `Processing segment: "${segment}"`);
             let nextElements = [];
-
             for (const el of currentElements) {
-                // On utilise behaviorCore pour gérer les patterns
-                const props = (window.behaviorCore) ? behaviorCore.getResolvedProps(el) : (el.behavior?.computed || {});
+                const props = behaviorCore.getResolvedProps(el);
                 const relDef = props[`rel-${segment}`];
-                
                 if (relDef) {
-                    log(3, `Found relation alias "rel-${segment}" -> "${relDef}"`);
-                    // RÉCURSION : On extrait uniquement les nodes pour la suite de la boucle
-					const result = resolveChain(el, relDef);
+                    const result = resolveChain(el, relDef);
                     nextElements.push(...result.nodes);
-                } 
-                else if (segment === 'self') {
+                } else if (segment === 'self') {
                     nextElements.push(el);
-                } 
-                else {
+                } else {
                     nextElements.push(...resolveSegment(el, segment));
                 }
             }
-
-            // Déduplication pour éviter les boucles ou les doublons de sélection
             currentElements = [...new Set(nextElements)];
-            
-            if (currentElements.length === 0) {
-                log(2, `Chain broken at segment: "${segment}"`);
-                break;
-            }
+            if (currentElements.length === 0) break;
         }
-        
-        log(2, `Chain resolved to ${currentElements.length} node(s)`);
-        
-        return {
-            nodes: currentElements,
-            type: 'nodes',
-            name: lastSegmentName
-        };
+        return { nodes: currentElements, type: 'nodes', name: lastSegmentName };
     };
 
     return { resolveChain };
