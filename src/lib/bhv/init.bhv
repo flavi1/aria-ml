@@ -1,6 +1,8 @@
 
 [role="tab"] {
-	on-click: log(self);
+	rel-tablist: "(closest: [role=tablist]) > [role=tab]";
+	rel-tabpanel: "(root) #{{aria-controls}}";
+	on-click: log(self, tabpanel, tablist);
 }
 
 
