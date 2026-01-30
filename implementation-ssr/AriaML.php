@@ -1,119 +1,45 @@
 <?php
-
 /**
- * AriaML.php - Moteur de rendu SSR et Négociation de contenu v1.4.9
- * Incorpore : NodeCache, Content Negotiation, Appearance & VolatileClasses SSR.
+ * AriaML.php - v1.5
+ * Moteur SSR / Négociation de contenu / Volatile Classes / NodeCache
  */
+
+die('UPDATED!');
+
+
 class AriaML {
-    private $dom;
-    private $ariaNode;
-    private $config = null;      // PageProperties (JSON-LD)
-    private $appearance = null;  // Appearance Config
-    private $attributes = [];
+    public $dom;
+    public $ariaNode;
+    public $config = null;
+    public $appearance = null;
+    public $attributes = [];
 
     public function __construct($htmlContent) {
         $this->dom = new DOMDocument();
         libxml_use_internal_errors(true);
         
         if (!empty($htmlContent)) {
-            // Conversion propre en entités numériques pour préserver l'UTF-8
+            // Force l'encodage pour éviter les problèmes de caractères spéciaux
             $content = mb_encode_numericentity($htmlContent, [0x80, 0x10FFFF, 0, 0x1FFFFF], 'UTF-8');
-            $this->dom->loadHTML($content, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+            $this->dom->loadHTML('<?xml encoding="utf-8" ?>' . $content, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
         }
         
         libxml_clear_errors();
 
+        // Récupération de la racine
         $this->ariaNode = $this->dom->getElementsByTagName('aria-ml')->item(0) 
                        ?? $this->dom->getElementsByTagName('aria-ml-fragment')->item(0);
 
-        $this->parseAriaNode();
-        
-        // Nouveauté 1.4.9 : Injection des classes volatiles pour le rendu initial
-        $this->applyVolatileClassesSSR();
+        if ($this->ariaNode) {
+            $this->parseAriaNode();
+            $this->applyVolatileClasses();
+        }
     }
 
     /**
-     * Orchestrateur principal : gère le buffer PHP et la réponse au client.
+     * Parse les attributs et les scripts de configuration
      */
-    public static function handle($testClient = false) {
-        $acceptHeader = $_SERVER['HTTP_ACCEPT'] ?? '';
-        $cacheHeader = $_SERVER['HTTP_LIVE_CACHE'] ?? '[]';
-        
-        $wantsFragment = (strpos($acceptHeader, 'aria-ml-fragment') !== false);
-        $wantsAriaML = ($testClient || $wantsFragment || strpos($acceptHeader, 'text/aria-ml') !== false);
-        
-        $knownKeys = json_decode($cacheHeader, true) ?? [];
-
-        ob_start();
-        return function() use ($wantsAriaML, $wantsFragment, $testClient, $knownKeys) {
-            $buffer = trim(ob_get_clean());
-            $script = '<script src="https://flavi1.github.io/aria-ml/src/standalone.js"></script>';
-            
-            if ($wantsAriaML) {
-                $worker = new DOMDocument();
-                libxml_use_internal_errors(true);
-                $worker->loadHTML('<?xml encoding="utf-8" ?>' . $buffer, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
-                
-                $rootTagName = $wantsFragment ? 'aria-ml-fragment' : 'aria-ml';
-                $existingRoot = $worker->getElementsByTagName($rootTagName)->item(0);
-
-                if (!$existingRoot) {
-                    $newRoot = $worker->createElement($rootTagName);
-                    $nodesToMove = [];
-                    foreach ($worker->childNodes as $node) $nodesToMove[] = $node;
-                    foreach ($nodesToMove as $node) $newRoot->appendChild($node);
-                    $worker->appendChild($newRoot);
-                }
-
-                $aria = new self($worker->saveHTML());
-
-                // Optimisation NodeCache
-                if (!empty($knownKeys)) {
-                    $xpath = new DOMXPath($aria->dom);
-                    foreach ($knownKeys as $key) {
-                        $nodes = $xpath->query("//*[@live-cache='" . htmlspecialchars($key) . "']");
-                        foreach ($nodes as $node) {
-                            while ($node->hasChildNodes()) {
-                                $node->removeChild($node->firstChild);
-                            }
-                        }
-                    }
-                }
-
-                $finalOutput = $aria->dom->saveHTML();
-                $finalOutput = preg_replace('/^<\?xml[^?]*\?>/i', '', trim($finalOutput));
-
-                if ($wantsFragment) {
-                    header('Content-Type: text/aria-ml-fragment; charset=utf-8');
-                    echo $finalOutput;
-                    exit;
-                }
-
-                header('Content-Type: ' . ($testClient ? 'text/html' : 'text/aria-ml') . '; charset=utf-8');
-                echo ($testClient ? "\n" : '') . $finalOutput . ($testClient ? $script : '');
-                exit;
-            }
-
-            // Fallback SSR : Rendu HTML5 Standard
-            $aria = new self($buffer);
-?>
-<!DOCTYPE html>
-<html <?php echo $aria->getHtmlAttributes(); ?>>
-<head data-ssr><meta charset="UTF-8">
-    <?php echo "\n	".$aria->renderHead(); ?>
-</head>
-<body>
-    <?php echo $buffer; ?>
-    <?php echo "\n".$script; ?>
-</body>
-</html>
-<?php
-        };
-    }
-
     private function parseAriaNode() {
-        if (!$this->ariaNode) return;
-
         foreach ($this->ariaNode->attributes as $attr) {
             $this->attributes[$attr->nodeName] = $attr->nodeValue;
         }
@@ -124,8 +50,8 @@ class AriaML {
             $content = trim($script->nodeValue);
 
             if ($type === 'ld+json' || $type === 'application/ld+json') {
-                $decoded = json_decode($content, true);
-                $this->config = isset($decoded[0]) ? $decoded[0] : $decoded;
+                $this->config = json_decode($content, true);
+                if (isset($this->config[0])) $this->config = $this->config[0];
             }
             
             if ($type === 'style+json' || $type === 'application/style+json') {
@@ -135,53 +61,126 @@ class AriaML {
     }
 
     /**
-     * Applique les volatileClasses sur le DOM avant l'envoi pour éviter le flash visuel.
+     * Applique physiquement les classes volatiles dans le DOM
      */
-    private function applyVolatileClassesSSR() {
+    private function applyVolatileClasses() {
         if (!$this->appearance) return;
 
-        $classesToApply = $this->appearance['volatileClasses'] ?? [];
-        $defaultTheme = $this->appearance['defaultTheme'] ?? null;
+        $classesMap = $this->appearance['volatileClasses'] ?? [];
+        $theme = $this->appearance['defaultTheme'] ?? null;
 
-        if ($defaultTheme && isset($this->appearance['themeList'][$defaultTheme]['volatileClasses'])) {
-            $themeVolatiles = $this->appearance['themeList'][$defaultTheme]['volatileClasses'];
-            foreach ($themeVolatiles as $selector => $classes) {
-                $existing = (array)($classesToApply[$selector] ?? []);
-                $new = (array)$classes;
-                $classesToApply[$selector] = array_unique(array_merge($existing, $new));
+        // Fusion avec les classes du thème par défaut
+        if ($theme && isset($this->appearance['themeList'][$theme]['volatileClasses'])) {
+            foreach ($this->appearance['themeList'][$theme]['volatileClasses'] as $sel => $cls) {
+                $existing = (array)($classesMap[$sel] ?? []);
+                $classesMap[$sel] = array_unique(array_merge($existing, (array)$cls));
             }
         }
 
         $xpath = new DOMXPath($this->dom);
-        foreach ($classesToApply as $selector => $classes) {
-            $classList = is_array($classes) ? $classes : explode(' ', $classes);
+        foreach ($classesMap as $selector => $classes) {
+            $list = is_array($classes) ? $classes : explode(' ', $classes);
             
-            // Sélecteur CSS vers XPath simplifié
-            $query = "//" . $selector; // Défaut (tag)
-            if (strpos($selector, '.') === 0) $query = "//*[contains(concat(' ', normalize-space(@class), ' '), ' " . substr($selector, 1) . " ')]";
-            if (strpos($selector, '#') === 0) $query = "//*[@id='" . substr($selector, 1) . "']";
+            // XPath simple pour tags, classes et IDs
+            $query = ".//" . $selector; 
+            if (strpos($selector, '.') === 0) $query = ".//*[contains(concat(' ', normalize-space(@class), ' '), ' " . substr($selector, 1) . " ')]";
+            if (strpos($selector, '#') === 0) $query = ".//*[@id='" . substr($selector, 1) . "']";
 
-            $nodes = $xpath->query($query);
+            $nodes = $xpath->query($query, $this->ariaNode);
             foreach ($nodes as $node) {
-                if ($node instanceof DOMElement) {
-                    $current = $node->getAttribute('class');
-                    $merged = array_unique(array_filter(array_merge(explode(' ', $current), $classList)));
-                    $node->setAttribute('class', implode(' ', $merged));
-                }
+                $curr = $node->getAttribute('class');
+                $newClasses = array_unique(array_filter(array_merge(explode(' ', $curr), $list)));
+                $node->setAttribute('class', implode(' ', $newClasses));
             }
         }
     }
 
+    /**
+     * Nettoie les nœuds présents dans le cache client
+     */
+    public function cleanNodeCache($keys) {
+        if (empty($keys)) return;
+        $xpath = new DOMXPath($this->dom);
+        foreach ($keys as $key) {
+            $nodes = $xpath->query(".//*[@live-cache='" . htmlspecialchars($key) . "']", $this->ariaNode);
+            foreach ($nodes as $node) {
+                while ($node->hasChildNodes()) {
+                    $node->removeChild($node->firstChild);
+                }
+                $node->setAttribute('data-node-cache', 'hit');
+            }
+        }
+    }
+
+    /**
+     * Gère la sortie finale (Orchestrateur)
+     */
+    public static function handle($testClient = false) {
+        $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
+        $cache = $_SERVER['HTTP_LIVE_CACHE'] ?? '[]';
+        
+        $wantsFragment = (strpos($accept, 'aria-ml-fragment') !== false);
+        $wantsAriaML = ($testClient || $wantsFragment || strpos($accept, 'text/aria-ml') !== false);
+        $knownKeys = json_decode($cache, true) ?? [];
+
+        ob_start();
+
+        return function() use ($wantsAriaML, $wantsFragment, $testClient, $knownKeys) {
+            $buffer = trim(ob_get_clean());
+            if (empty($buffer)) return;
+
+            // Une seule instanciation, tout est fait dans le constructeur (Parse + Volatile)
+            $aria = new AriaML($buffer);
+            
+            // Nettoyage du cache si nécessaire
+            if ($wantsAriaML) {
+                $aria->cleanNodeCache($knownKeys);
+            }
+
+            $scriptTag = '<script src="https://flavi1.github.io/aria-ml/src/standalone.js"></script>';
+            
+            // Extraction du HTML final propre
+            $output = $testClient ? $buffer : $aria->dom->saveHTML($aria->ariaNode);
+            // Suppression du prefixe XML si DOMDocument l'a ajouté
+            $output = preg_replace('/^<\?xml[^?]*\?>/i', '', trim($output));
+
+            if ($wantsAriaML) {
+                if ($wantsFragment) {
+                    header('Content-Type: text/aria-ml-fragment; charset=utf-8');
+                    echo $output;
+                } else {
+                    header('Content-Type: ' . ($testClient ? 'text/html' : 'text/aria-ml') . '; charset=utf-8');
+                    echo ($testClient ? "<!-- TEST CLIENT IMPLEMENTATION -->\n" : "") . $output . ($testClient ? $scriptTag : "");
+                }
+                exit;
+            }
+
+            // FALLBACK SSR STANDARD
+            ?>
+<!DOCTYPE html>
+<html <?php echo $aria->getHtmlAttributes(); ?>>
+<head data-ssr>
+    <meta charset="UTF-8">
+    <?php echo $aria->renderHead(); ?>
+</head>
+<body>
+    <?php echo $output; ?>
+    <?php echo "\n" . $scriptTag; ?>
+</body>
+</html>
+            <?php
+        };
+    }
+
     public function renderHead() {
         $tags = [];
-        $appearance = $this->appearance ?? [];
-        $currentThemeName = $appearance['defaultTheme'] ?? null;
-        $themeList = $appearance['themeList'] ?? [];
+        $app = $this->appearance ?? [];
+        $themeName = $app['defaultTheme'] ?? null;
+        $themes = $app['themeList'] ?? [];
 
         if (isset($this->attributes['csp'])) {
             $tags[] = '<meta http-equiv="Content-Security-Policy" content="'.htmlspecialchars($this->attributes['csp']).'">';
         }
-
         if (isset($this->config['csrf-token'])) {
             $tags[] = '<meta name="csrf-token" content="'.htmlspecialchars($this->config['csrf-token']).'">';
         }
@@ -189,53 +188,54 @@ class AriaML {
             $tags[] = '<link rel="canonical" href="'.htmlspecialchars($this->config['canonical']).'">';
         }
 
-        if (isset($this->config['metadatas']) && is_array($this->config['metadatas'])) {
-            foreach ($this->config['metadatas'] as $key => $meta) {
-                $content = htmlspecialchars($meta['content'] ?? '');
-                $names = isset($meta['name']) ? (array)$meta['name'] : [$key];
-                $props = isset($meta['property']) ? (array)$meta['property'] : [];
-
-                foreach ($names as $n) {
-                    if ($n === 'title') $tags[] = "<title>$content</title>";
-                    else $tags[] = "<meta name=\"".htmlspecialchars($n)."\" content=\"$content\">";
+        // Metadatas
+        if (isset($this->config['metadatas'])) {
+            foreach ($this->config['metadatas'] as $k => $m) {
+                $val = htmlspecialchars($m['content'] ?? '');
+                if (isset($m['name'])) {
+                    foreach ((array)$m['name'] as $n) {
+                        if ($n === 'title') $tags[] = "<title>$val</title>";
+                        else $tags[] = "<meta name=\"$n\" content=\"$val\">";
+                    }
                 }
-                foreach ($props as $p) $tags[] = "<meta property=\"".htmlspecialchars($p)."\" content=\"$content\">";
+                if (isset($m['property'])) {
+                    foreach ((array)$m['property'] as $p) $tags[] = "<meta property=\"$p\" content=\"$val\">";
+                }
             }
         }
 
-        $viewport = $themeList[$currentThemeName]['viewport'] ?? ($appearance['viewport'] ?? null);
-        if ($viewport) $tags[] = '<meta name="viewport" content="'.htmlspecialchars($viewport).'">';
+        // Viewport & Color
+        $vp = $themes[$themeName]['viewport'] ?? ($app['viewport'] ?? null);
+        if ($vp) $tags[] = '<meta name="viewport" content="'.htmlspecialchars($vp).'">';
+        $clr = $themes[$themeName]['browserColor'] ?? ($app['browserColor'] ?? null);
+        if ($clr) $tags[] = '<meta name="theme-color" content="'.htmlspecialchars($clr).'">';
 
-        $color = $themeList[$currentThemeName]['browserColor'] ?? ($appearance['browserColor'] ?? null);
-        if ($color) $tags[] = '<meta name="theme-color" content="'.htmlspecialchars($color).'">';
-
-        if (isset($appearance['assets'])) {
-            foreach ($appearance['assets'] as $asset) $tags[] = $this->buildLinkTag($asset);
+        // Assets
+        if (isset($app['assets'])) {
+            foreach ($app['assets'] as $a) $tags[] = $this->buildLink($a);
         }
-        foreach ($themeList as $name => $data) {
-            $isActive = ($name === $currentThemeName);
-            foreach ($data['assets'] ?? [] as $asset) {
-                $assetCopy = $asset;
-                if (($assetCopy['rel'] ?? '') === 'stylesheet') {
-                    $assetCopy['title'] = $name;
-                    if (!$isActive) $assetCopy['rel'] = 'alternate stylesheet';
+        foreach ($themes as $name => $data) {
+            $active = ($name === $themeName);
+            foreach ($data['assets'] ?? [] as $a) {
+                if (($a['rel'] ?? '') === 'stylesheet') {
+                    $a['title'] = $name;
+                    if (!$active) $a['rel'] = 'alternate stylesheet';
                 }
-                $tags[] = $this->buildLinkTag($assetCopy, $isActive);
+                $tags[] = $this->buildLink($a, $active);
             }
         }
-
         return implode("\n\t", $tags);
     }
 
-    private function buildLinkTag($asset, $isActive = true) {
-        $rel = htmlspecialchars($asset['rel'] ?? 'stylesheet');
-        $href = htmlspecialchars($asset['href'] ?? '');
-        $attrs = "";
-        foreach ($asset as $k => $v) {
-            if (!in_array($k, ['rel', 'href'])) $attrs .= ' ' . htmlspecialchars($k) . '="' . htmlspecialchars($v) . '"';
+    private function buildLink($a, $active = true) {
+        $rel = htmlspecialchars($a['rel'] ?? 'stylesheet');
+        $href = htmlspecialchars($a['href'] ?? '');
+        $at = "";
+        foreach ($a as $k => $v) {
+            if (!in_array($k, ['rel', 'href'])) $at .= ' '.htmlspecialchars($k).'="'.htmlspecialchars($v).'"';
         }
-        $disabled = (!$isActive && strpos($rel, 'alternate') !== false) ? ' disabled' : '';
-        return "<link rel=\"$rel\" href=\"$href\"$attrs$disabled>";
+        $dis = (!$active && strpos($rel, 'alternate') !== false) ? ' disabled' : '';
+        return "<link rel=\"$rel\" href=\"$href\"$at$dis>";
     }
 
     public function getHtmlAttributes() {
