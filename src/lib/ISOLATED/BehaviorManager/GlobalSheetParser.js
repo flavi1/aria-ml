@@ -49,10 +49,14 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = '---BH
         return div;
     })();
 
+	let onRefreshCallback = null;
+    
+    // Création d'une promesse qui ne sera résolue qu'après le PREMIER chargement
+    let firstLoadResolver;
+    const ready = new Promise(res => firstLoadResolver = res);
+
     const transformAndInject = (css, id) => {
-		// Nettoyage des commentaire pour éviter les faux positifs.
         let cleanCSS = css.replace(/\/\*[\s\S]*?\*\//g, '');
-        // On préfixe toutes les propriétés qui ne commencent pas par un tiret
         const regex = /([\{\;])\s*([a-zA-Z][a-zA-Z0-9-]+)\s*:/g;
         const transformed = cleanCSS.replace(regex, (match, separator, prop) => `${separator}${PREFIX}${prop}:`);
         
@@ -67,7 +71,7 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = '---BH
 
     const load = async () => {
         const sheets = document.querySelectorAll(sheetsSelector);
-        for (let [idx, sheet] of sheets.entries()) {
+        const jobs = Array.from(sheets).map(async (sheet, idx) => {
             let content = "";
             if (sheet.hasAttribute(sheetAttribute)) {
                 try {
@@ -78,6 +82,17 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = '---BH
                 content = sheet.textContent;
             }
             if (content) transformAndInject(content, idx);
+        });
+
+        await Promise.all(jobs);
+        
+        // Signal au Core : "Les styles sont injectés, tu peux scanner"
+        if (onRefreshCallback) onRefreshCallback();
+        
+        // Résolution de la promesse initiale si c'est le premier passage
+        if (firstLoadResolver) {
+            firstLoadResolver();
+            firstLoadResolver = null;
         }
     };
 
@@ -85,5 +100,8 @@ const GlobalSheetParser = (type, sheetsSelector, sheetAttribute, PREFIX = '---BH
     
     new MutationObserver(() => load()).observe(document.head, { childList: true, subtree: true });
 
-    return { refresh: load, ready: Promise.resolve() };
+    return { 
+        ready, 
+        onRefresh: (cb) => onRefreshCallback = cb 
+    };
 };

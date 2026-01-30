@@ -54,6 +54,7 @@ const behaviorCore = (() => {
         // Ne pas enregistrer les types internes ou déjà présents
         if (registeredEvents.has(type) || ['clickout', 'init', 'apply'].includes(type) || type.startsWith('kb-')) return;
         
+        
         document.addEventListener(type, async (e) => {
             const el = e.target.closest('*');
             if (!el || !el.behavior) return;
@@ -72,10 +73,12 @@ const behaviorCore = (() => {
     };
 
     const processLifecycle = async (el) => {
+
         if (!(el instanceof HTMLElement) || !el.behavior) return;
         if (!el.behavior.hasChanged()) return;
 
         const props = getResolvedProps(el);
+
         if (Object.keys(props).length === 0) return;
 
         // Enregistrement dynamique (Events standards)
@@ -107,7 +110,21 @@ const behaviorCore = (() => {
         }
     };
 
+	// Fonction de scan complet
+    const fullScan = () => {
+        if (isProcessing) return;
+        console.info("[AriaML] Scanning for behavior changes...");
+        document.querySelectorAll('*').forEach(el => processLifecycle(el));
+    };
+
     const start = async () => {
+		// Branchement de la réactivité sur les nouvelles feuilles
+        definitionFactory.onRefresh(() => {
+            // On laisse un micro-tick au navigateur pour appliquer le CSS injecté
+            requestAnimationFrame(fullScan);
+        });
+
+        // Attente du chargement initial
         await definitionFactory.ready;
 
 		// 1. Gestion Clavier Optimisée (kb-key1-key2)
@@ -163,10 +180,6 @@ const behaviorCore = (() => {
             });
         });
 
-        const root = document.documentElement;
-        mutationObserver.observe(root, { childList: true, subtree: true, attributes: true });
-        resizeObserver.observe(root);
-
         // 4. Gestion Click-Out
         document.addEventListener('click', async (e) => {
             document.querySelectorAll('*').forEach(el => {
@@ -181,10 +194,32 @@ const behaviorCore = (() => {
             });
         }, true);
 
-        // Scan initial
-        document.querySelectorAll('*').forEach(processLifecycle);
+		// Scan initial
+        fullScan();
+        
+		// Activation MutationObserver pour le DOM
+        mutationObserver.observe(document.documentElement, { 
+            childList: true, 
+            subtree: true, 
+            attributes: true 
+        });
+        
         console.info("[AriaML] Core 1.4.4 : Full-Scan, Order & Keyboard Ready.");
     };
 
-    return { start, definitionFactory, definePattern, getResolvedProps, applyOrder };
+    return { start, fullScan, definitionFactory, definePattern, getResolvedProps, applyOrder };
 })();
+
+// Fonction de lancement sécurisée
+const initAriaML = () => {
+    console.log('[AriaML] Lancement du moteur...');
+    behaviorCore.start();
+};
+
+// Si le DOM est déjà prêt (ou en cours de finalisation), on lance immédiatement
+if (document.readyState === 'interactive' || document.readyState === 'complete') {
+    initAriaML();
+} else {
+    // Sinon, on attend sagement l'événement
+    document.addEventListener('DOMContentLoaded', initAriaML);
+}
