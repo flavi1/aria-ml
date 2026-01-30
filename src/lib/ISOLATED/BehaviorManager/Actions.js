@@ -122,9 +122,16 @@ const behaviorActions = (() => {
             if (target) target.focus();
         },
 
-        'trigger': (el, { args }) => {
+		'trigger': (el, { args }) => {
+            const eventName = args[1];
             behaviorResolvers.resolveChain(el, args[0]).nodes.forEach(n => {
-                n.dispatchEvent(new CustomEvent(args[1], { bubbles: true }));
+                if (window.behaviorCore) behaviorCore.registerGlobalEvent(eventName);
+                
+                n.dispatchEvent(new CustomEvent(eventName, { 
+                    bubbles: true, 
+                    cancelable: true,
+                    detail: { source: el } 
+                }));
             });
         },
 
@@ -140,54 +147,42 @@ const behaviorActions = (() => {
     };
 
 	const execute = async (el, evName, behaviorStr, originalEvent = null) => {
+        if (!behaviorStr) return;
 
-		if (!behaviorStr) return;
+        // Split intelligent (ignore espaces dans parenthèses)
+        const sequence = behaviorStr.split(/\s+(?![^()]*\))/);
 
-console.log(el, evName, behaviorStr)
-		
-		// On sépare les actions par les espaces, 
-		// mais on ignore les espaces à l'intérieur des parenthèses
-		const sequence = behaviorStr.split(/\s+(?![^()]*\))/);
+        for (const actionStr of sequence) {
+            const match = actionStr.match(/^([\w-]+)(?:\((.*)\))?$/);
+            if (!match) continue;
 
-		for (const actionStr of sequence) {
-			// Extraction du nom de l'action et du contenu des parenthèses
-			const match = actionStr.match(/^([\w-]+)(?:\((.*)\))?$/);
-			if (!match) continue;
+            const name = match[1].trim();
+            const rawArgs = match[2] || "";
+            
+            // Split arguments (ignore virgules dans guillemets)
+            let args = rawArgs 
+                ? rawArgs.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+                         .map(a => a.trim().replace(/^["']|["']$/g, ''))
+                : [];
 
-			const name = match[1].trim();
-			const rawArgs = match[2] || "";
-			
-			// Séparation des arguments par virgule, 
-			// en ignorant les virgules à l'intérieur des chaînes entre guillemets
-			let args = rawArgs 
-				? rawArgs.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
-						 .map(a => a.trim().replace(/^["']|["']$/g, ''))
-				: [];
+            // /!\ ATTENTION : Suppression de la résolution automatique ici 
+            // pour laisser resolveTarget gérer les @ et . proprement.
 
-			// RÉSOLUTION : Si un argument est une expression AriaML (ex: rel:parent)
-			// On le transforme en valeur réelle avant de l'envoyer à l'action.
-			if (window.behaviorResolvers) {
-				args = args.map(arg => behaviorResolvers.resolve(el, arg));
-			}
-
-			if (actions[name]) {
-				try {
-					// EXÉCUTION : On passe l'élément, les arguments résolus, 
-					// et un objet de contexte enrichi.
-					await actions[name](el, {
-						args,
-						event: originalEvent,
-						evName, // Permet à l'action de savoir si elle est appelée via 'init', 'click', etc.
-						props: el.behavior.computed // Accès direct aux propriétés ---BHV-
-					});
-				} catch (err) {
-					console.error(`[AriaML] Erreur dans l'action "${name}":`, err);
-				}
-			} else {
-				console.warn(`[AriaML] Action inconnue: ${name}`);
-			}
-		}
-	};
+            if (actions[name]) {
+                try {
+                    // On attend l'action (important pour wait ou request)
+                    await actions[name](el, {
+                        args,
+                        event: originalEvent,
+                        evName,
+                        props: el.behavior ? el.behavior.computed : {}
+                    });
+                } catch (err) {
+                    console.error(`[AriaML] Erreur action "${name}":`, err);
+                }
+            }
+        }
+    };
 
 
     return { execute, actions, resolveTarget };

@@ -7,6 +7,7 @@
     const AppearanceManager = {
         isUpdating: false,
         _jsonCache: {}, // Cache interne pour éviter les fetch répétitifs
+        _appliedVolatiles: new Map(),
         
         // Méthode utilitaire pour charger du JSON (URL, relatif ou data:base64)
         fetchExternalJson: async function(url) {
@@ -22,53 +23,86 @@
             }
         },
 
-        render: async function(data) {
-            // Si data est une URL/base64 (provenant du src du script), on le résout
-            if (typeof data === 'string') {
-                data = await this.fetchExternalJson(data);
-            }
-            
+		render: async function(data) {
+            if (typeof data === 'string') data = await this.fetchExternalJson(data);
             if (!data || this.isUpdating) return;
             this.isUpdating = true;
 
             const tracker = new Set();
+            this.clearVolatiles(); // On nettoie tout avant de ré-appliquer
 
             // 1. Assets persistants
             if (Array.isArray(data.assets)) {
                 data.assets.forEach(asset => this.syncLink(asset, tracker, true));
             }
 
-            // 2. Gestion de la ThemeList via l'arbitrage du ThemeManager
+            // 2. Gestion des Thèmes
+            let activeThemeData = null;
             if (data.themeList && window.ThemeManager) {
                 window.ThemeManager.updateConfig(data);
                 const activeName = window.ThemeManager.activeName;
-
-                // Résolution des thèmes (peut contenir des chaînes/URLs)
+                
                 for (let [themeName, themeConfig] of Object.entries(data.themeList)) {
-                    // Si la config du thème est une URL, on la charge
                     if (typeof themeConfig === 'string') {
                         themeConfig = await this.fetchExternalJson(themeConfig);
-                        data.themeList[themeName] = themeConfig; // Sauvegarde dans data pour la suite
+                        data.themeList[themeName] = themeConfig;
                     }
-
                     if (!themeConfig) continue;
 
                     const isActive = (themeName === activeName);
-                    
+                    if (isActive) activeThemeData = themeConfig;
+
                     if (Array.isArray(themeConfig.assets)) {
                         themeConfig.assets.forEach(asset => {
-                            const themeAsset = { ...asset, title: themeName };
-                            this.syncLink(themeAsset, tracker, isActive);
+                            this.syncLink({ ...asset, title: themeName }, tracker, isActive);
                         });
                     }
                 }
-                
                 this.syncBrowserColor(data, activeName);
                 this.syncViewport(data, activeName);
             }
 
+            // 3. Application des Volatile Classes (Persistant + Thème)
+            this.applyVolatileMap(data.volatileClasses);
+            if (activeThemeData) {
+                this.applyVolatileMap(activeThemeData.volatileClasses);
+            }
+
             this.cleanup(tracker);
             this.isUpdating = false;
+        },
+
+		/**
+         * Applique un dictionnaire de classes volatiles au DOM
+         */
+        applyVolatileMap: function(map) {
+            if (!map) return;
+            Object.entries(map).forEach(([selector, classes]) => {
+                const elements = document.querySelectorAll(selector);
+                const classList = Array.isArray(classes) ? classes : [classes];
+                
+                elements.forEach(el => {
+                    classList.forEach(cls => {
+                        el.classList.add(cls);
+                        
+                        // Enregistrement pour le nettoyage futur
+                        if (!this._appliedVolatiles.has(el)) this._appliedVolatiles.set(el, new Set());
+                        this._appliedVolatiles.get(el).add(cls);
+                    });
+                });
+            });
+        },
+
+        /**
+         * Supprime toutes les classes volatiles précédemment injectées
+         */
+        clearVolatiles: function() {
+            this._appliedVolatiles.forEach((classes, el) => {
+                if (document.contains(el)) {
+                    classes.forEach(cls => el.classList.remove(cls));
+                }
+            });
+            this._appliedVolatiles.clear();
         },
 
         syncLink: function(asset, tracker, isActive) {
