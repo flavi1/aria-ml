@@ -4,8 +4,6 @@
  * Moteur SSR / Négociation de contenu / Volatile Classes / NodeCache
  */
 
-die('UPDATED!');
-
 
 class AriaML {
     public $dom;
