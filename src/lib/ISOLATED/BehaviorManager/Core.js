@@ -1,15 +1,17 @@
 /**
  * Core.js
- * Orchestrateur v1.4.2 - Full DOM Scanning pour réactivité CSS totale
+ * Orchestrateur v1.4.3 - Dynamic Event Registration & Anti-Cycle
  */
 const behaviorCore = (() => {
     const definitionFactory = GlobalSheetParser('behavior', 'script[type="behavior"], script[type="text/behavior"]', 'src');
     const initializedElements = new WeakSet();
+    const registeredEvents = new Set(); // Pour ne pas attacher 2 fois le même event au document
     const patterns = new Map();
+    
+    let isProcessing = false; // Flag anti-cycle
+    let mutationObserver = null;
 
-    const definePattern = (name, props) => {
-        patterns.set(name, props);
-    };
+    const definePattern = (name, props) => patterns.set(name, props);
 
     const getResolvedProps = (el) => {
         if (!el.behavior) return {};
@@ -33,8 +35,8 @@ const behaviorCore = (() => {
         });
         return resolved;
     };
-
-    const applyOrder = (el) => {
+    
+	const applyOrder = (el) => {
         const parent = el.parentElement;
         if (!parent) return;
         const sorted = Array.from(parent.children).sort((a, b) => {
@@ -47,25 +49,60 @@ const behaviorCore = (() => {
         sorted.forEach((node, idx) => {
             if (parent.children[idx] !== node) parent.insertBefore(node, parent.children[idx]);
         });
+	};
+
+    const registerGlobalEvent = (type) => {
+        if (registeredEvents.has(type) || type === 'clickout' || type === 'init' || type === 'apply') return;
+        
+        document.addEventListener(type, async (e) => {
+            const el = e.target.closest('*');
+            if (!el || !el.behavior) return;
+            
+            const props = getResolvedProps(el);
+            const action = props['on-' + type] || props[type];
+            
+            if (action) {
+                isProcessing = true; // On bloque l'observer durant l'action
+                await behaviorActions.execute(el, type, action, e);
+                isProcessing = false;
+            }
+        }, { capture: true, passive: true });
+        
+        registeredEvents.add(type);
     };
 
     const processLifecycle = async (el) => {
         if (!(el instanceof HTMLElement) || !el.behavior) return;
-        
-        // C'est ici que hasChanged() sauve les performances :
-        // Si les styles calculés (prefixés) n'ont pas bougé, on s'arrête là.
         if (!el.behavior.hasChanged()) return;
 
         const props = getResolvedProps(el);
         if (Object.keys(props).length === 0) return;
 
+        // Enregistrement dynamique des événements détectés dans les propriétés
+        Object.keys(props).forEach(key => {
+            if (key.startsWith('on-')) {
+                const eventType = key.replace('on-', '');
+                registerGlobalEvent(eventType);
+            }
+        });
+
+        // Cycle de vie
         if (!initializedElements.has(el)) {
-            if (props.init) await behaviorActions.execute(el, 'init', props.init);
+            if (props['on-init'] || props['init']) {
+                isProcessing = true;
+                await behaviorActions.execute(el, 'on-init', props['on-init'] || props['init']);
+                isProcessing = false;
+            }
             initializedElements.add(el);
         }
-
-        if (props.order) applyOrder(el);
-        if (props['on-attach']) await behaviorActions.execute(el, 'on-attach', props['on-attach']);
+		
+		if (props.order) applyOrder(el);
+		
+        if (props['on-apply']) {
+            isProcessing = true;
+            await behaviorActions.execute(el, 'on-apply', props['on-apply']);
+            isProcessing = false;
+        }
     };
 
     const start = async () => {
@@ -75,8 +112,10 @@ const behaviorCore = (() => {
             elements.forEach(el => processLifecycle(el));
         };
 
-        // 1. MutationObserver : Structure et Attributs
-        const mutationObserver = new MutationObserver(mutations => {
+        // 1. MutationObserver avec protection anti-cycle
+        mutationObserver = new MutationObserver(mutations => {
+            if (isProcessing) return; // Ignore les mutations induites par AriaML
+            
             mutations.forEach(m => {
                 if (m.type === 'childList') {
                     m.addedNodes.forEach(n => { if (n instanceof HTMLElement) processLifecycle(n); });
@@ -86,63 +125,35 @@ const behaviorCore = (() => {
             });
         });
 
-        // 2. ResizeObserver sur le root : Le déclencheur universel des Media Queries
+        // 2. ResizeObserver
         const resizeObserver = new ResizeObserver(() => {
-            requestAnimationFrame(() => {
-                // Scan complet à chaque changement de dimension pour capter 
-                // les nouvelles propriétés injectées par les Media Queries
-                scanAndRefresh(document.querySelectorAll('*'));
-            });
+            if (isProcessing) return;
+            requestAnimationFrame(() => scanAndRefresh(document.querySelectorAll('*')));
         });
 
         const root = document.documentElement;
         mutationObserver.observe(root, { childList: true, subtree: true, attributes: true });
         resizeObserver.observe(root);
 
-		// 3. Délégation d'Événements Globale
-        // On écoute tout au niveau du document pour capter les éléments dynamiques
-        ['click', 'focus', 'blur', 'input', 'change'].forEach(type => {
-            document.addEventListener(type, e => {
-                const el = e.target.closest('*');
-                if (!el || !el.behavior) return;
-                
+        // 3. Gestion Click-Out
+        document.addEventListener('click', async (e) => {
+            const candidates = document.querySelectorAll('*');
+            for (const el of candidates) {
+                if (!el.behavior) continue;
                 const props = getResolvedProps(el);
-                // On cherche 'click' ou 'on-click'
-                const action = props[type] || props['on-' + type];
-                
-                if (action) {
-                    behaviorActions.execute(el, type, action, e);
+                const action = props['on-clickout'];
+                if (action && !el.contains(e.target)) {
+                    isProcessing = true;
+                    await behaviorActions.execute(el, 'clickout', action, e);
+                    isProcessing = false;
                 }
-            }, true); // UseCapture pour focus/blur
-        });
-
-        // 4. Gestion spécifique du Click-Out (si nécessaire)
-        document.addEventListener('click', (e) => {
-            document.querySelectorAll('*').forEach(el => {
-                if (!el.behavior) return;
-                const props = getResolvedProps(el);
-                const action = props['on-click-out'] || props['click-out'];
-                if (!action) return;
-
-                // Si le clic est hors de l'élément
-                if (!el.contains(e.target)) {
-                    behaviorActions.execute(el, 'click-out', action, e);
-                }
-            });
+            }
         }, true);
 
         // Scan initial
         scanAndRefresh(document.querySelectorAll('*'));
-        
-        console.info("[AriaML] behaviorCore 1.4.2 : Réactivité Full-Scan activée.");
+        console.info("[AriaML] Core 1.4.3 : Full-Scan & Dynamic Events Ready.");
     };
 
-    return { start, definitionFactory, definePattern, getResolvedProps, applyOrder };
+    return { start, definitionFactory, definePattern, getResolvedProps };
 })();
-
-// Lancement
-if (document.readyState === 'interactive' || document.readyState === 'complete') {
-    behaviorCore.start();
-} else {
-    document.addEventListener('DOMContentLoaded', () => behaviorCore.start());
-}
