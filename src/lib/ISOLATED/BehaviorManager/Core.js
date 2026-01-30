@@ -1,20 +1,18 @@
 /**
  * Core.js
- * Orchestrateur v1.3.6 - Mixins & Extension behavior()
+ * Orchestrateur v1.4.2 - Full DOM Scanning pour réactivité CSS totale
  */
 const behaviorCore = (() => {
     const definitionFactory = GlobalSheetParser('behavior', 'script[type="text/behavior"]', 'src');
     const initializedElements = new WeakSet();
     const patterns = new Map();
 
-    console.log(definitionFactory);
-
     const definePattern = (name, props) => {
         patterns.set(name, props);
-        console.info(`[AriaML] Pattern défini : ${name}`);
     };
 
     const getResolvedProps = (el) => {
+        if (!el.behavior) return {};
         const rawProps = el.behavior.computed;
         const resolved = {};
         const patternName = rawProps['behavior'];
@@ -36,19 +34,14 @@ const behaviorCore = (() => {
         return resolved;
     };
 
-    const supportsElement = (conditionText) => {
-        const match = conditionText.match(/element\(<(.*?)>\)/);
-        if (!match) return CSS.supports(conditionText);
-        const el = document.createElement(match[1]);
-        return !(el instanceof HTMLUnknownElement);
-    };
-
     const applyOrder = (el) => {
         const parent = el.parentElement;
         if (!parent) return;
         const sorted = Array.from(parent.children).sort((a, b) => {
-            const orderA = parseInt(getResolvedProps(a).order) || 0;
-            const orderB = parseInt(getResolvedProps(b).order) || 0;
+            const propsA = getResolvedProps(a);
+            const propsB = getResolvedProps(b);
+            const orderA = parseInt(propsA.order) || 0;
+            const orderB = parseInt(propsB.order) || 0;
             return orderA - orderB;
         });
         sorted.forEach((node, idx) => {
@@ -57,86 +50,67 @@ const behaviorCore = (() => {
     };
 
     const processLifecycle = async (el) => {
-        if (!(el instanceof HTMLElement)) return;
+        if (!(el instanceof HTMLElement) || !el.behavior) return;
+        
+        // C'est ici que hasChanged() sauve les performances :
+        // Si les styles calculés (prefixés) n'ont pas bougé, on s'arrête là.
+        if (!el.behavior.hasChanged()) return;
+
         const props = getResolvedProps(el);
-        if (!props || Object.keys(props).length === 0) return;
+        if (Object.keys(props).length === 0) return;
 
         if (!initializedElements.has(el)) {
             if (props.init) await behaviorActions.execute(el, 'init', props.init);
             initializedElements.add(el);
         }
-        
+
         if (props.order) applyOrder(el);
         if (props['on-attach']) await behaviorActions.execute(el, 'on-attach', props['on-attach']);
     };
 
-    const handleClickOut = (e) => {
-        document.querySelectorAll('*').forEach(el => {
-            if (!el.behavior) return;
-            const props = getResolvedProps(el);
-            const action = props['on-click-out'] || props['click-out'];
-            if (!action) return;
+    const start = async () => {
+        await definitionFactory.ready;
 
-            const relatedNodes = [];
-            Object.keys(props).forEach(key => {
-                if (key.startsWith('rel-')) {
-                    relatedNodes.push(...behaviorResolvers.resolveChain(el, props[key]));
+        const scanAndRefresh = (elements) => {
+            elements.forEach(el => processLifecycle(el));
+        };
+
+        // 1. MutationObserver : Structure et Attributs
+        const mutationObserver = new MutationObserver(mutations => {
+            mutations.forEach(m => {
+                if (m.type === 'childList') {
+                    m.addedNodes.forEach(n => { if (n instanceof HTMLElement) processLifecycle(n); });
+                } else {
+                    processLifecycle(m.target);
                 }
             });
-
-            const isInside = el.contains(e.target) || relatedNodes.some(n => n.contains(e.target));
-            if (!isInside) behaviorActions.execute(el, 'click-out', action, e);
         });
-    };
 
-    const start = async () => {
-        console.log('start awaiting BS');
-        await definitionFactory.ready;
-        console.log('end awaiting BS');
-        
-        const observer = new MutationObserver(m => m.forEach(res => res.addedNodes.forEach(n => {
-            if (n instanceof HTMLElement) processLifecycle(n);
-        })));
-        observer.observe(document.documentElement, { childList: true, subtree: true });
-        
-        if (window.behaviorKeyboard) behaviorKeyboard.init();
-        
-        window.addEventListener('resize', () => {
-            document.querySelectorAll('*').forEach(el => {
-                if (el.behavior && getResolvedProps(el).order) applyOrder(el);
+        // 2. ResizeObserver sur le root : Le déclencheur universel des Media Queries
+        const resizeObserver = new ResizeObserver(() => {
+            requestAnimationFrame(() => {
+                // Scan complet à chaque changement de dimension pour capter 
+                // les nouvelles propriétés injectées par les Media Queries
+                scanAndRefresh(document.querySelectorAll('*'));
             });
         });
 
-        document.addEventListener('click', handleClickOut, true);
+        const root = document.documentElement;
+        mutationObserver.observe(root, { childList: true, subtree: true, attributes: true });
+        resizeObserver.observe(root);
 
-        ['click', 'focus', 'blur', 'input', 'change'].forEach(type => {
-            document.addEventListener(type, e => {
-                const el = e.target.closest('*');
-                if (!el || !el.behavior) return;
-                const props = getResolvedProps(el);
-                const action = props[type] || props['on-' + type];
-                if (action) behaviorActions.execute(el, type, action, e);
-            }, true);
-        });
-
-        document.querySelectorAll('*').forEach(processLifecycle);
-        console.info("[AriaML] behaviorCore démarré.");
+        // Scan initial
+        scanAndRefresh(document.querySelectorAll('*'));
+        
+        console.info("[AriaML] behaviorCore 1.4.2 : Réactivité Full-Scan activée.");
     };
 
-    window.supportsElement = supportsElement;
-    return { start, definitionFactory, definePattern, getResolvedProps };
+    return { start, definitionFactory, definePattern, getResolvedProps, applyOrder };
 })();
 
-// Fonction de lancement sécurisée
-const initAriaML = () => {
-    console.log('[AriaML] Lancement du moteur...');
-    behaviorCore.start();
-};
-
-// Si le DOM est déjà prêt (ou en cours de finalisation), on lance immédiatement
+// Lancement
 if (document.readyState === 'interactive' || document.readyState === 'complete') {
-    initAriaML();
+    behaviorCore.start();
 } else {
-    // Sinon, on attend sagement l'événement
-    document.addEventListener('DOMContentLoaded', initAriaML);
+    document.addEventListener('DOMContentLoaded', () => behaviorCore.start());
 }

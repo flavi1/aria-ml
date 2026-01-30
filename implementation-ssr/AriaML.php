@@ -125,12 +125,12 @@ class AriaML {
             $type = $script->getAttribute('type');
             $content = trim($script->nodeValue);
 
-            if ($type === 'application/ld+json' || $type === 'application/json') {
+            if ($type === 'ld+json' || $type === 'application/ld+json') {
                 $decoded = json_decode($content, true);
                 $this->config = isset($decoded[0]) ? $decoded[0] : $decoded;
             }
             
-            if ($type === 'application/appearance+json') {
+            if ($type === 'style+json' or $type === 'application/style+json') {
                 $this->appearance = json_decode($content, true);
             }
         }
@@ -176,10 +176,10 @@ class AriaML {
         }
 
         // 4. Viewport & Theme Color
-        $viewport = $themeList[$currentThemeName]['viewport'] ?? ($appearance['defaultViewport'] ?? null);
+        $viewport = $themeList[$currentThemeName]['viewport'] ?? ($appearance['viewport'] ?? null);
         if ($viewport) $tags[] = '<meta name="viewport" content="'.htmlspecialchars($viewport).'">';
 
-        $color = $themeList[$currentThemeName]['browserColor'] ?? ($appearance['defaultBrowserColor'] ?? null);
+        $color = $themeList[$currentThemeName]['browserColor'] ?? ($appearance['browserColor'] ?? null);
         if ($color) $tags[] = '<meta name="theme-color" content="'.htmlspecialchars($color).'">';
 
         // 5. Assets (Persistants & Thèmes)

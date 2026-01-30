@@ -1,39 +1,46 @@
- 
-async function initPopup() {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+/**
+ * popup.js
+ * Interface de contrôle AriaML - Communication interne au monde ISOLATED.
+ */
 
-    // Injection d'un script pour analyser la page
-    chrome.scripting.executeScript({
+const api = typeof browser !== 'undefined' ? browser : chrome;
+
+async function initPopup() {
+    const [tab] = await api.tabs.query({ active: true, currentWindow: true });
+
+    // On reste dans le monde ISOLATED (par défaut) pour accéder au ThemeManager de l'extension
+    api.scripting.executeScript({
         target: { tabId: tab.id },
         func: () => {
-            const ariaNode = document.querySelector('aria-ml');
-            if (!ariaNode) return { isAria: false };
-
-            // Extraction de la config via le script appearance
-            const appearanceScript = ariaNode.querySelector('script[type="application/appearance+json"]');
-            let themes = [];
-            let currentTheme = "";
-
-            if (appearanceScript) {
-                const config = JSON.parse(appearanceScript.textContent);
-                themes = Object.keys(config.themeList || {});
-                currentTheme = config.defaultTheme;
+            // Ici, window est l'objet global du monde ISOLATED
+            const themeMgr = window.ThemeManager;
+            
+            if (!themeMgr) {
+                return { isAria: false };
             }
 
-            return { isAria: true, themes, currentTheme };
+            return { 
+                isAria: true, 
+                themes: Object.keys(themeMgr.config?.themeList || {}), 
+                currentTheme: themeMgr.activeName 
+            };
         }
     }, (results) => {
+        if (!results || !results[0]?.result) return;
+        
         const data = results[0].result;
         const indicator = document.getElementById('statusIndicator');
         const themeSection = document.getElementById('themeSection');
         const themeSelect = document.getElementById('themeSelect');
 
         if (data.isAria) {
-            indicator.textContent = "Document AriaML détecté";
+            indicator.textContent = "AriaML (Mode Isolé)";
             indicator.className = "status is-aria";
-
-            if (data.themes && data.themes.length > 0) {
+            
+            if (data.themes.length > 0) {
                 themeSection.classList.remove('hidden');
+                themeSelect.innerHTML = ''; 
+
                 data.themes.forEach(theme => {
                     const opt = document.createElement('option');
                     opt.value = theme;
@@ -42,34 +49,31 @@ async function initPopup() {
                     themeSelect.appendChild(opt);
                 });
 
-                // Listener pour changer le thème
-                themeSelect.addEventListener('change', (e) => {
+                themeSelect.onchange = (e) => {
                     changeThemeInTab(tab.id, e.target.value);
-                });
+                };
             }
         } else {
-            indicator.textContent = "Non AriaML";
+            indicator.textContent = "AriaML non détecté dans ce contexte";
             indicator.className = "status not-aria";
+            themeSection.classList.add('hidden');
         }
     });
 }
 
+/**
+ * Commande au ThemeManager du monde ISOLATED de changer le thème.
+ */
 function changeThemeInTab(tabId, themeName) {
-    chrome.scripting.executeScript({
+    api.scripting.executeScript({
         target: { tabId: tabId },
         func: (name) => {
-            // On simule le changement via les alternate stylesheets
-            // (Le moteur AriaML gère cela nativement si on change l'attribut ou via Navigation.js)
-            const links = document.querySelectorAll('link[rel*="stylesheet"][title]');
-            links.forEach(link => {
-                link.disabled = (link.title !== name);
-            });
-            
-            // On peut aussi notifier le moteur si nécessaire
-            document.dispatchEvent(new CustomEvent('ariaml.themechange', { detail: { theme: name } }));
+            if (window.ThemeManager) {
+                window.ThemeManager.setTheme(name);
+            }
         },
         args: [themeName]
     });
 }
 
-initPopup();
+document.addEventListener('DOMContentLoaded', initPopup);

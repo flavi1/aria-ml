@@ -4,10 +4,10 @@
  */
 const behaviorActions = (() => {
 
-/**
+    /**
      * Analyse le token pour déterminer la cible, le type d'accès et la propriété
      */
-    const resolveTarget = (el, token) => {
+	const resolveTarget = (el, token) => {
         const lastAt = token.lastIndexOf('@');
         const lastDot = token.lastIndexOf('.');
         const sepIdx = Math.max(lastAt, lastDot);
@@ -17,7 +17,7 @@ const behaviorActions = (() => {
             return behaviorResolvers.resolveChain(el, token);
         }
 
-        // Sinon, on sépare le chemin de la propriété finale
+        // Sinon, on sépare le chemin (qui peut contenir des /) de la propriété finale
         let chainPath = token.substring(0, sepIdx);
         if (chainPath === "") chainPath = 'self'; 
 
@@ -32,9 +32,9 @@ const behaviorActions = (() => {
             name: property 
         };
     };
-
+    
     const actions = {
-        'log': (el, { args }) => {
+        'log': (el, args) => {
             const logs = args.map(a => resolveTarget(el, a));
             console.group('[AriaML Action Log]');
             console.log('Targets Resolved:', logs);
@@ -42,10 +42,10 @@ const behaviorActions = (() => {
             console.groupEnd();
         },
 
-        'set': (el, { args }) => {
+        'set': (el, args) => {
             const target = resolveTarget(el, args[0]);
             const value = args[1] !== undefined ? args[1] : "";
-            if (target.type === 'nodes') return;
+            if (target.type === 'nodes') return; // On ne "set" pas un nœud directement
 
             target.nodes.forEach(n => {
                 if (target.type === 'attribute') n.setAttribute(target.name, value);
@@ -53,7 +53,7 @@ const behaviorActions = (() => {
             });
         },
 
-        'rm': (el, { args }) => {
+        'rm': (el, args) => {
             const target = resolveTarget(el, args[0]);
             target.nodes.forEach(n => {
                 if (target.type === 'attribute') n.removeAttribute(target.name);
@@ -61,7 +61,7 @@ const behaviorActions = (() => {
             });
         },
 
-        'toggle': (el, { args }) => {
+        'toggle': (el, args) => {
             const target = resolveTarget(el, args[0]);
             const cycle = args.slice(1);
             target.nodes.forEach(n => {
@@ -80,70 +80,68 @@ const behaviorActions = (() => {
             });
         },
 
-        'append': (el, { args }) => {
+        'append': (el, args) => {
             const dest = behaviorResolvers.resolveChain(el, args[0]).nodes[0];
             const subject = behaviorResolvers.resolveChain(el, args[1]).nodes[0];
             if (dest && subject) dest.appendChild(subject);
         },
 
-        'prepend': (el, { args }) => {
+        'prepend': (el, args) => {
             const dest = behaviorResolvers.resolveChain(el, args[0]).nodes[0];
             const subject = behaviorResolvers.resolveChain(el, args[1]).nodes[0];
             if (dest && subject) dest.prepend(subject);
         },
 
-        'remove': (el, { args }) => {
+        'remove': (el, args) => {
+            // Ici on cible le nœud lui-même pour suppression physique
             behaviorResolvers.resolveChain(el, args[0]).nodes.forEach(n => n.remove());
         },
 
-        'open': (el, { args }) => {
+        'open': (el, args) => {
             behaviorResolvers.resolveChain(el, args[0]).nodes.forEach(n => {
                 if (n.tagName === 'DIALOG') n.show();
                 else n.removeAttribute('hidden');
             });
         },
 
-        'open-modal': (el, { args }) => {
+        'open-modal': (el, args) => {
             behaviorResolvers.resolveChain(el, args[0]).nodes.forEach(n => {
                 if (n.tagName === 'DIALOG') n.showModal();
                 else n.removeAttribute('hidden');
             });
         },
 
-        'close': (el, { args }) => {
+        'close': (el, args) => {
             behaviorResolvers.resolveChain(el, args[0]).nodes.forEach(n => {
                 if (n.tagName === 'DIALOG') n.close();
                 else n.setAttribute('hidden', '');
             });
         },
 
-        'focus': (el, { args }) => {
+        'focus': (el, args) => {
             const target = behaviorResolvers.resolveChain(el, args[0]).nodes[0];
             if (target) target.focus();
         },
 
-        'trigger': (el, { args }) => {
+        'trigger': (el, args) => {
             behaviorResolvers.resolveChain(el, args[0]).nodes.forEach(n => {
                 n.dispatchEvent(new CustomEvent(args[1], { bubbles: true }));
             });
         },
 
-        'wait': (el, { args }) => new Promise(res => setTimeout(res, parseInt(args[0]))),
+        'wait': (el, args) => new Promise(res => setTimeout(res, parseInt(args[0]))),
 
-        'cancel': (el, { event }) => {
-            if (event && typeof event.preventDefault === 'function') event.preventDefault();
+        'cancel': (el, args, ev) => {
+            if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
         },
 
-        'stop': (el, { event }) => {
-            if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+        'stop': (el, args, ev) => {
+            if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
         }
     };
 
 	const execute = async (el, evName, behaviorStr, originalEvent = null) => {
-
 		if (!behaviorStr) return;
-
-console.log(el, evName, behaviorStr)
 		
 		// On sépare les actions par les espaces, 
 		// mais on ignore les espaces à l'intérieur des parenthèses
@@ -159,30 +157,14 @@ console.log(el, evName, behaviorStr)
 			
 			// Séparation des arguments par virgule, 
 			// en ignorant les virgules à l'intérieur des chaînes entre guillemets
-			let args = rawArgs 
+			const args = rawArgs 
 				? rawArgs.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
 						 .map(a => a.trim().replace(/^["']|["']$/g, ''))
 				: [];
 
-			// RÉSOLUTION : Si un argument est une expression AriaML (ex: rel:parent)
-			// On le transforme en valeur réelle avant de l'envoyer à l'action.
-			if (window.behaviorResolvers) {
-				args = args.map(arg => behaviorResolvers.resolve(el, arg));
-			}
-
 			if (actions[name]) {
-				try {
-					// EXÉCUTION : On passe l'élément, les arguments résolus, 
-					// et un objet de contexte enrichi.
-					await actions[name](el, {
-						args,
-						event: originalEvent,
-						evName, // Permet à l'action de savoir si elle est appelée via 'init', 'click', etc.
-						props: el.behavior.computed // Accès direct aux propriétés ---BHV-
-					});
-				} catch (err) {
-					console.error(`[AriaML] Erreur dans l'action "${name}":`, err);
-				}
+				// Support de l'asynchronisme (ex: pour l'action 'wait')
+				await actions[name](el, args, originalEvent);
 			} else {
 				console.warn(`[AriaML] Action inconnue: ${name}`);
 			}
@@ -190,5 +172,5 @@ console.log(el, evName, behaviorStr)
 	};
 
 
-    return { execute, actions, resolveTarget };
+    return { execute, actions };
 })();

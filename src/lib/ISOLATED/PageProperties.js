@@ -32,7 +32,7 @@
 
         parse: function() {
             // Supporte LD+JSON et le format "json" DX-friendly
-            const scripts = document.querySelectorAll('aria-ml script[type="application/ld+json"], aria-ml script[type="json"]');
+            const scripts = document.querySelectorAll('aria-ml script[type="application/ld+json"], aria-ml script[type="ld+json"]');
             for (const s of scripts) {
                 try {
                     const j = JSON.parse(s.textContent);
@@ -45,7 +45,7 @@
 
         // ... syncRootAttributes, syncHead, cleanupHead, syncMeta, syncLink restent identiques ...
         syncRootAttributes: function(rootAria, data) {
-            const rootProps = { 'lang': data.lang, 'dir': data.dir, 'translate': data.translate, 'prefix': data.prefix };
+            const rootProps = { 'lang': data.lang, 'dir': data.dir, 'translate': data.translate };
             Object.entries(rootProps).forEach(([k, v]) => {
                 if (v && rootAria.getAttribute(k) !== v) rootAria.setAttribute(k, v);
             });
@@ -146,7 +146,7 @@
             let needsCheck = false;
             for (const m of mutations) {
                 for (const node of m.addedNodes) {
-                    if (node.nodeName === 'SCRIPT' && (node.type === 'application/ld+json' || node.type === 'json')) {
+                    if (node.nodeName === 'SCRIPT' && (node.type === 'application/ld+json' || node.type === 'ld+json')) {
                         needsCheck = true;
                         // On attache un observer au contenu du nouveau script
                         contentObserver.observe(node, { characterData: true, childList: true });
@@ -160,7 +160,7 @@
         const contentObserver = new MutationObserver(() => AriaMLRenderer.render());
 
         // Initialisation des scripts existants
-        const existingScripts = root.querySelectorAll('script[type="application/ld+json"], script[type="json"]');
+        const existingScripts = root.querySelectorAll('script[type="application/ld+json"], script[type="ld+json"]');
         existingScripts.forEach(s => contentObserver.observe(s, { characterData: true, childList: true }));
 
         structureObserver.observe(root, { childList: true, subtree: true });

@@ -4,4 +4,6 @@
 	rel-tablist: "(closest: [role=tablist]) [role=tab]";
 	rel-tabpanel: "(root) #{aria-controls}";
 	on-click: behavior() log(tablist/tabpanel);
+	init: log(tablist/tabpanel);
+	on-attach: log(tablist/tabpanel);
 }

@@ -29,7 +29,7 @@
     });
 	
     const findTargetScript = () => {
-        const scripts = document.querySelectorAll('aria-ml script[type="application/ld+json"]');
+        const scripts = document.querySelectorAll('aria-ml script[type="ld+json"], aria-ml script[type="application/ld+json"]');
         for (const s of scripts) {
             try {
                 const j = JSON.parse(s.textContent);

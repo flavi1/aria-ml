@@ -8,6 +8,7 @@
         config: null,
         storageKey: 'ariaml_user_theme',
         init: function() {
+            // Tenter de récupérer le thème sauvegardé
             const savedTheme = localStorage.getItem(this.storageKey);
             if (savedTheme) {
                 this.activeName = savedTheme;
@@ -16,33 +17,31 @@
 
         updateConfig: function(data) {
             this.config = data;
+            // Si aucun thème n'est encore actif (premier boot), on suit la cascade
             if (!this.activeName) {
                 this.activeName = this.resolveAutoTheme();
             }
         },
 
         resolveAutoTheme: function() {
-            if (!this.config || !this.config.themeList) return null;
             const list = this.config.themeList;
-            
+            // 1. Chercher un thème dont la media query matche
             for (const [name, theme] of Object.entries(list)) {
-                // Si theme est une string (URL déportée), on ne peut pas tester media 
-                // avant chargement, sauf si media est défini au premier niveau (optionnel)
                 if (theme.media && window.matchMedia(theme.media).matches) {
                     return name;
                 }
             }
+            // 2. Sinon, thème par défaut
             return this.config.defaultTheme;
         },
 
-        setTheme: async function(name) {
+        setTheme: function(name) {
             if (this.config.themeList[name]) {
                 this.activeName = name;
                 localStorage.setItem(this.storageKey, name);
-                
+                // On demande à l'AppearanceManager de rafraîchir le rendu
                 if (window.AppearanceManager) {
-                    // On appelle render qui est maintenant async
-                    await window.AppearanceManager.render(this.config);
+                    window.AppearanceManager.render(this.config);
                 }
             }
         }
@@ -51,3 +50,5 @@
     window.ThemeManager = ThemeManager;
     ThemeManager.init();
 })();
+
+

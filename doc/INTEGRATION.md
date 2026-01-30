@@ -9,7 +9,7 @@ Dans une architecture native, AriaML remplace la structure HTML traditionnelle. 
 ```html
 <!DOCTYPE aria-ml>
 <aria-ml lang="fr">
-    <script type="application/ld+json" slot="definition">
+    <script type="ld+json" slot="definition">
     [{
         "@context": "[https://ariaml.org/ns#](https://ariaml.org/ns#)",
         "@type": "PageProperties",
@@ -18,8 +18,8 @@ Dans une architecture native, AriaML remplace la structure HTML traditionnelle. 
     </script>
 	<script type="application/appearance+json" slot="appearance">
 	{
-		"defaultBrowserColor": "red",
-		"defaultViewport": "width=device-width, initial-scale=1",
+		"browserColor": "red",
+		"viewport": "width=device-width, initial-scale=1",
 		"assets": [
 			{ "rel": "shortcut icon", "href": "/favicon.ico" },
 			{ "rel": "stylesheet", "href": "persistant1.css" },
@@ -47,8 +47,8 @@ Pour les environnements web actuels, AriaML s'intègre via un polyfill unique. L
 <body>
     <aria-ml>
 
-        <script type="application/ld+json" slot="definition"> ... </script>
-        <script type="application/appearance+json" slot="appearance"> ... </script>
+        <script type="ld+json" slot="definition"> ... </script>
+        <script type="style+json" slot="appearance"> ... </script>
         <main slot="main">...</main>
 
     </aria-ml>
@@ -115,8 +115,8 @@ Le `ThemeManager` est le module responsable de l'interprétation visuelle. Il ut
 
 ```json
 	{
-		"defaultBrowserColor": "red",
-		"defaultViewport": "width=device-width, initial-scale=2",
+		"browserColor": "red",
+		"viewport": "width=device-width, initial-scale=2",
 		"assets": [
 			{ "rel": "icon", "type": "image/png", "sizes": "32x32", "href": "/favicon-32x32.png" },
 			{ "rel": "apple-touch-icon", "sizes": "180x180", "href": "/apple-touch-icon.png" },

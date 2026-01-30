@@ -212,7 +212,6 @@ class AriaMLNavigation {
         const targetSlots = [];
 
         if (isFullReplacement) {
-            if (useTransition) currentRoot.style.viewTransitionName = 'aria-ml-root';
             targetSlots.push(currentRoot);
         } else {
             this.restoreFromCache(doc);
@@ -225,7 +224,6 @@ class AriaMLNavigation {
                 if (target) {
                     target.setAttribute('aria-busy', 'true');
                     target.setAttribute('inert', ''); 
-                    if (useTransition) target.style.viewTransitionName = `slot-${slotName}`;
                     targetSlots.push(target);
                 }
             });
@@ -253,7 +251,6 @@ class AriaMLNavigation {
             const transition = document.startViewTransition(() => performUpdate());
             await transition.finished;
             targetSlots.forEach(el => {
-                el.style.viewTransitionName = '';
                 el.removeAttribute('aria-busy');
                 el.removeAttribute('inert');
             });
@@ -285,5 +282,5 @@ class AriaMLNavigation {
 
 // Initialisation
 window.NavigationManager = new AriaMLNavigation({ 
-    navigationBaseUrl: window.location.origin 
+    navigationBaseUrl: document.querySelector('aria-ml').getAttribute('nav-base-url') ?? window.location.origin
 });

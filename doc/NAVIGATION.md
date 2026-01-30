@@ -20,7 +20,7 @@ Un fragment doit intégrer sa propre logique de sécurité pour forcer la restau
 <div class="aria-ml-fallback">Chargement du document...</div>
 
 <aria-ml-fragment>
-    <script type="application/ld+json">
+    <script type="ld+json">
     [{
         "@context": "https://ariaml.org/ns#",
         "@type": "PageProperties",
