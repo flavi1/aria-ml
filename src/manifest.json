@@ -71,7 +71,6 @@
 					"lib/ISOLATED/Navigation/Navigation.js",
 					
 					"lib/ISOLATED/BehaviorManager/Actions.js",
-					"lib/ISOLATED/BehaviorManager/Keyboard.js",
 					"lib/ISOLATED/BehaviorManager/Resolvers.js",
 					"lib/ISOLATED/BehaviorManager/GlobalSheetParser.js",
 					"lib/ISOLATED/BehaviorManager/Core.js",

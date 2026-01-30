@@ -1,15 +1,16 @@
 /**
  * Core.js
- * Orchestrateur v1.4.3 - Dynamic Event Registration & Anti-Cycle
+ * Orchestrateur v1.4.4 - Full-Scan, Anti-Cycle, Order & Keyboard
  */
 const behaviorCore = (() => {
     const definitionFactory = GlobalSheetParser('behavior', 'script[type="behavior"], script[type="text/behavior"]', 'src');
     const initializedElements = new WeakSet();
-    const registeredEvents = new Set(); // Pour ne pas attacher 2 fois le même event au document
+    const registeredEvents = new Set();
     const patterns = new Map();
     
-    let isProcessing = false; // Flag anti-cycle
+    let isProcessing = false;
     let mutationObserver = null;
+    const activeKeys = new Set();
 
     const definePattern = (name, props) => patterns.set(name, props);
 
@@ -35,24 +36,23 @@ const behaviorCore = (() => {
         });
         return resolved;
     };
-    
-	const applyOrder = (el) => {
+
+    const applyOrder = (el) => {
         const parent = el.parentElement;
         if (!parent) return;
         const sorted = Array.from(parent.children).sort((a, b) => {
             const propsA = getResolvedProps(a);
             const propsB = getResolvedProps(b);
-            const orderA = parseInt(propsA.order) || 0;
-            const orderB = parseInt(propsB.order) || 0;
-            return orderA - orderB;
+            return (parseInt(propsA.order) || 0) - (parseInt(propsB.order) || 0);
         });
         sorted.forEach((node, idx) => {
             if (parent.children[idx] !== node) parent.insertBefore(node, parent.children[idx]);
         });
-	};
+    };
 
     const registerGlobalEvent = (type) => {
-        if (registeredEvents.has(type) || type === 'clickout' || type === 'init' || type === 'apply') return;
+        // Ne pas enregistrer les types internes ou déjà présents
+        if (registeredEvents.has(type) || ['clickout', 'init', 'apply'].includes(type) || type.startsWith('kb-')) return;
         
         document.addEventListener(type, async (e) => {
             const el = e.target.closest('*');
@@ -62,11 +62,11 @@ const behaviorCore = (() => {
             const action = props['on-' + type] || props[type];
             
             if (action) {
-                isProcessing = true; // On bloque l'observer durant l'action
+                isProcessing = true;
                 await behaviorActions.execute(el, type, action, e);
                 isProcessing = false;
             }
-        }, { capture: true, passive: true });
+        }, { capture: true });
         
         registeredEvents.add(type);
     };
@@ -78,26 +78,28 @@ const behaviorCore = (() => {
         const props = getResolvedProps(el);
         if (Object.keys(props).length === 0) return;
 
-        // Enregistrement dynamique des événements détectés dans les propriétés
+        // Enregistrement dynamique (Events standards)
         Object.keys(props).forEach(key => {
             if (key.startsWith('on-')) {
-                const eventType = key.replace('on-', '');
-                registerGlobalEvent(eventType);
+                registerGlobalEvent(key.replace('on-', ''));
             }
         });
 
-        // Cycle de vie
+        // Initialisation
         if (!initializedElements.has(el)) {
-            if (props['on-init'] || props['init']) {
+            const initAction = props['on-init'] || props['init'];
+            if (initAction) {
                 isProcessing = true;
-                await behaviorActions.execute(el, 'on-init', props['on-init'] || props['init']);
+                await behaviorActions.execute(el, 'on-init', initAction);
                 isProcessing = false;
             }
             initializedElements.add(el);
         }
-		
-		if (props.order) applyOrder(el);
-		
+
+        // Structure (Order)
+        if (props.order !== undefined) applyOrder(el);
+
+        // Application (Mutation)
         if (props['on-apply']) {
             isProcessing = true;
             await behaviorActions.execute(el, 'on-apply', props['on-apply']);
@@ -108,14 +110,42 @@ const behaviorCore = (() => {
     const start = async () => {
         await definitionFactory.ready;
 
-        const scanAndRefresh = (elements) => {
-            elements.forEach(el => processLifecycle(el));
-        };
+		// 1. Gestion Clavier Optimisée (kb-key1-key2)
+		const keysDown = new Set();
 
-        // 1. MutationObserver avec protection anti-cycle
+		document.addEventListener('keydown', (e) => {
+			const k = e.key.toLowerCase();			
+			// Empêche l'auto-répétition du système d'exploitation
+			if (keysDown.has(k)) return; 
+			
+			keysDown.add(k);
+			
+			const combo = Array.from(keysDown).sort().join('-');
+			const kbEventName = 'kb-' + combo;
+			
+			const el = e.target.closest('*');
+			if (!el || !el.behavior) return;
+
+			const props = getResolvedProps(el);
+			const action = props['on-' + kbEventName] || props[kbEventName];
+
+			if (action) {
+				isProcessing = true;
+				behaviorActions.execute(el, kbEventName, action, e);
+				isProcessing = false;
+			}
+		});
+
+		document.addEventListener('keyup', (e) => {
+			keysDown.delete(e.key.toLowerCase());
+		});
+
+		// Reset de sécurité si on change de fenêtre (évite les touches "bloquées")
+		window.addEventListener('blur', () => keysDown.clear());
+
+        // 2. MutationObserver (Anti-cycle)
         mutationObserver = new MutationObserver(mutations => {
-            if (isProcessing) return; // Ignore les mutations induites par AriaML
-            
+            if (isProcessing) return;
             mutations.forEach(m => {
                 if (m.type === 'childList') {
                     m.addedNodes.forEach(n => { if (n instanceof HTMLElement) processLifecycle(n); });
@@ -125,35 +155,36 @@ const behaviorCore = (() => {
             });
         });
 
-        // 2. ResizeObserver
+        // 3. ResizeObserver
         const resizeObserver = new ResizeObserver(() => {
             if (isProcessing) return;
-            requestAnimationFrame(() => scanAndRefresh(document.querySelectorAll('*')));
+            requestAnimationFrame(() => {
+                document.querySelectorAll('*').forEach(el => processLifecycle(el));
+            });
         });
 
         const root = document.documentElement;
         mutationObserver.observe(root, { childList: true, subtree: true, attributes: true });
         resizeObserver.observe(root);
 
-        // 3. Gestion Click-Out
+        // 4. Gestion Click-Out
         document.addEventListener('click', async (e) => {
-            const candidates = document.querySelectorAll('*');
-            for (const el of candidates) {
-                if (!el.behavior) continue;
+            document.querySelectorAll('*').forEach(el => {
+                if (!el.behavior) return;
                 const props = getResolvedProps(el);
                 const action = props['on-clickout'];
                 if (action && !el.contains(e.target)) {
                     isProcessing = true;
-                    await behaviorActions.execute(el, 'clickout', action, e);
+                    behaviorActions.execute(el, 'clickout', action, e);
                     isProcessing = false;
                 }
-            }
+            });
         }, true);
 
         // Scan initial
-        scanAndRefresh(document.querySelectorAll('*'));
-        console.info("[AriaML] Core 1.4.3 : Full-Scan & Dynamic Events Ready.");
+        document.querySelectorAll('*').forEach(processLifecycle);
+        console.info("[AriaML] Core 1.4.4 : Full-Scan, Order & Keyboard Ready.");
     };
 
-    return { start, definitionFactory, definePattern, getResolvedProps };
+    return { start, definitionFactory, definePattern, getResolvedProps, applyOrder };
 })();
