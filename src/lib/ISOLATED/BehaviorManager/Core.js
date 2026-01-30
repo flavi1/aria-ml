@@ -3,7 +3,7 @@
  * Orchestrateur v1.4.2 - Full DOM Scanning pour réactivité CSS totale
  */
 const behaviorCore = (() => {
-    const definitionFactory = GlobalSheetParser('behavior', 'script[type="text/behavior"]', 'src');
+    const definitionFactory = GlobalSheetParser('behavior', 'script[type="behavior"], script[type="text/behavior"]', 'src');
     const initializedElements = new WeakSet();
     const patterns = new Map();
 
@@ -98,6 +98,38 @@ const behaviorCore = (() => {
         const root = document.documentElement;
         mutationObserver.observe(root, { childList: true, subtree: true, attributes: true });
         resizeObserver.observe(root);
+
+		// 3. Délégation d'Événements Globale
+        // On écoute tout au niveau du document pour capter les éléments dynamiques
+        ['click', 'focus', 'blur', 'input', 'change'].forEach(type => {
+            document.addEventListener(type, e => {
+                const el = e.target.closest('*');
+                if (!el || !el.behavior) return;
+                
+                const props = getResolvedProps(el);
+                // On cherche 'click' ou 'on-click'
+                const action = props[type] || props['on-' + type];
+                
+                if (action) {
+                    behaviorActions.execute(el, type, action, e);
+                }
+            }, true); // UseCapture pour focus/blur
+        });
+
+        // 4. Gestion spécifique du Click-Out (si nécessaire)
+        document.addEventListener('click', (e) => {
+            document.querySelectorAll('*').forEach(el => {
+                if (!el.behavior) return;
+                const props = getResolvedProps(el);
+                const action = props['on-click-out'] || props['click-out'];
+                if (!action) return;
+
+                // Si le clic est hors de l'élément
+                if (!el.contains(e.target)) {
+                    behaviorActions.execute(el, 'click-out', action, e);
+                }
+            });
+        }, true);
 
         // Scan initial
         scanAndRefresh(document.querySelectorAll('*'));
