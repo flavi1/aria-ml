@@ -167,6 +167,7 @@ class AriaML {
 </body>
 </html>
             <?php
+            exit;
         };
     }
 
