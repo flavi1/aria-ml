@@ -201,12 +201,16 @@ class AriaMLNavigation {
         const incomingRoot = doc.querySelector('aria-ml, aria-ml-fragment');
         const useTransition = document.startViewTransition && 
                               !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-        if (!currentRoot || !incomingRoot) {
-            document.documentElement.removeAttribute('aria-busy');
-            document.documentElement.removeAttribute('inert');
-            return;
-        }
+        
+		if (!currentRoot || !incomingRoot) {
+			console.warn('AriaML: Structure invalide. Redirection native...');
+			
+			// On NE débloque PAS. 
+			// On laisse l'utilisateur dans l'état "chargement" 
+			// pendant que le navigateur fait le saut vers la nouvelle URL.
+			window.location.href = url;
+			return;
+		}
 
         const isFullReplacement = incomingRoot.tagName.toLowerCase() === 'aria-ml';
         const targetSlots = [];
