@@ -123,11 +123,24 @@ class AriaML {
 
         ob_start();
 
+	/**
+     * Gère la sortie finale (Orchestrateur)
+     */
+    public static function handle($testClient = false) {
+        $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
+        $cache = $_SERVER['HTTP_LIVE_CACHE'] ?? '[]';
+        
+        $wantsFragment = (strpos($accept, 'aria-ml-fragment') !== false);
+        $wantsAriaML = ($testClient || $wantsFragment || strpos($accept, 'text/aria-ml') !== false);
+        $knownKeys = json_decode($cache, true) ?? [];
+
+        ob_start();
+
         return function() use ($wantsAriaML, $wantsFragment, $testClient, $knownKeys) {
             $buffer = trim(ob_get_clean());
             if (empty($buffer)) return;
 
-            // Une seule instanciation, tout est fait dans le constructeur (Parse + Volatile)
+            // Une seule instanciation (Parse + Volatile classes via le constructeur)
             $aria = new AriaML($buffer);
             
             // Nettoyage du cache si nécessaire
@@ -137,9 +150,28 @@ class AriaML {
 
             $scriptTag = '<script src="https://flavi1.github.io/aria-ml/src/standalone.js"></script>';
             
-            // Extraction du HTML final propre
+            // Mutation du tag racine en cas de fragment
+            if ($wantsFragment && !$testClient && $aria->ariaNode && $aria->ariaNode->tagName === 'aria-ml') {
+                $fragment = $aria->dom->createElement('aria-ml-fragment');
+                
+                // Transfert des attributs (nav-base-url, lang, etc.)
+                foreach ($aria->ariaNode->attributes as $attr) {
+                    $fragment->setAttribute($attr->nodeName, $attr->nodeValue);
+                }
+                
+                // Transfert des nœuds enfants
+                while ($aria->ariaNode->firstChild) {
+                    $fragment->appendChild($aria->ariaNode->firstChild);
+                }
+                
+                // Remplacement de la référence pour l'extraction
+                $aria->ariaNode = $fragment;
+            }
+
+            // Extraction du HTML final
             $output = $testClient ? $buffer : $aria->dom->saveHTML($aria->ariaNode);
-            // Suppression du prefixe XML si DOMDocument l'a ajouté
+            
+            // Nettoyage propre
             $output = preg_replace('/^<\?xml[^?]*\?>/i', '', trim($output));
 
             if ($wantsAriaML) {
@@ -148,7 +180,7 @@ class AriaML {
                     echo $output;
                 } else {
                     header('Content-Type: ' . ($testClient ? 'text/html' : 'text/aria-ml') . '; charset=utf-8');
-                    echo ($testClient ? "<!-- TEST CLIENT IMPLEMENTATION -->\n" : "") . $output . ($testClient ? $scriptTag : "");
+                    echo ($testClient ? "\n" : "") . $output . ($testClient ? $scriptTag : "");
                 }
                 exit;
             }
