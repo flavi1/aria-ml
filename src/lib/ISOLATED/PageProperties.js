@@ -115,29 +115,7 @@
                 });
             }
         },
-
-        syncLink: function(rel, href, attrs, tracker) {
-            // Sélecteur précis pour éviter les doublons de ressources identiques
-            let sel = `link[rel="${rel}"][href="${href}"]`;
-            if (attrs.title) sel += `[title="${attrs.title}"]`;
-            if (attrs.type) sel += `[type="${attrs.type}"]`;
-            
-            tracker.add(sel);
-            let el = document.head.querySelector(sel);
-            if (!el) {
-                el = document.createElement('link');
-                el.rel = rel; 
-                el.href = href;
-                document.head.appendChild(el);
-            }
-            // Sync des attributs restants (hreflang, sizes, type...)
-            Object.entries(attrs).forEach(([k, v]) => {
-                if (!['rel', 'href'].includes(k) && el.getAttribute(k) !== v) {
-                    el.setAttribute(k, v);
-                }
-            });
-        },
-
+        
         cleanupHead: function(tracker) {
             this.createdSelectors.forEach(sel => {
                 if (!tracker.has(sel)) {
@@ -166,6 +144,8 @@
         syncLink: function(rel, href, attrs, tracker) {
             let sel = `link[rel="${rel}"][href="${href}"]`;
             if (attrs.title) sel += `[title="${attrs.title}"]`;
+            if (attrs.type) sel += `[type="${attrs.type}"]`;
+            
             tracker.add(sel);
             let el = document.head.querySelector(sel);
             if (!el) {

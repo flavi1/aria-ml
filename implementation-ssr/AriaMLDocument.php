@@ -3,16 +3,19 @@
 
 class AriaMLDocument {
 
-	static protected $autoUpdate = true;
 	static protected $isLoaded = false;	
 
 	protected $volatileClasses = [];
 	protected $styles = [];
 	protected $themeList = [];
-	protected $browserColor = null;
-	protected $viewport = 'width=device-width, initial-scale=1';
-	protected $defaultTheme = null;
 	protected $callback = null;
+
+	public static $autoUpdate = true;
+	
+	public $cleanCSSIds = true;
+	public $browserColor = null;
+	public $viewport = 'width=device-width, initial-scale=1';
+	public $defaultTheme = null;
 
 	
 	static function load() {
@@ -105,6 +108,8 @@ class AriaMLDocument {
 	
 	function addCSS($asset, $theme = null) {
 		if ($theme) {
+			if(!isset($this->themeList[$theme]))
+				$this->themeList[$theme] = ['assets' => []];
 			$this->themeList[$theme]['assets'][] = $asset;
 		} else {
 			$this->styles[] = $asset;
@@ -118,14 +123,14 @@ class AriaMLDocument {
 	function hydrateAssets($head_html) {
 		if (empty($head_html)) return;
 
-		// On cherche toutes les balises <link>
 		preg_match_all('/<link\s+([^>]+)>/i', $head_html, $matches);
 
 		foreach ($matches[1] as $attributes) {
 			$asset = [];
+			$targets = ['rel', 'href', 'sizes', 'type', 'media', 'title'];
 			
-			// Liste des attributs que l'on souhaite capturer pour AriaML
-			$targets = ['id', 'rel', 'href', 'sizes', 'type', 'media'];
+			if(!$this->cleanCSSIds)
+				$targets[] = 'id';
 			
 			foreach ($targets as $attr) {
 				if (preg_match('/' . $attr . '=["\']([^"\']+)["\']/i', $attributes, $v)) {
@@ -133,9 +138,30 @@ class AriaMLDocument {
 				}
 			}
 
-			// On ne garde que si href et rel sont présents
 			if (isset($asset['href']) && isset($asset['rel'])) {
-				$this->addCSS($asset);
+				$rel = strtolower($asset['rel']);
+				
+				// 1. Filtrage : On ne garde que l'Apparence
+				$isStyle = (strpos($rel, 'stylesheet') !== false);
+				$isIcon = (strpos($rel, 'icon') !== false);
+				if (!$isStyle && !$isIcon) continue;
+
+				// 2. Détermination du destinataire (Global ou Thème spécifique)
+				// Si un 'title' est présent, c'est un asset lié à un thème nommé
+				$targetTheme = isset($asset['title']) ? $asset['title'] : null;
+
+				// 3. Logique de Simplification (Uniquement pour styles persistants sans titre)
+				$isAlternate = (strpos($rel, 'alternate') !== false);
+				$hasSpecificMedia = (isset($asset['media']) && $asset['media'] !== 'all' && $asset['media'] !== 'screen');
+				$hasExtraData = (isset($asset['id']) || isset($asset['type']) || isset($asset['sizes']));
+
+				// On ne simplifie en string que si c'est un style persistant, standard, et sans thème
+				if ($isStyle && !$isAlternate && !$hasSpecificMedia && !$hasExtraData && !$targetTheme) {
+					$this->addCSS($asset['href']);
+				} else {
+					// On garde l'objet complet pour les icônes, les alternates ou les styles à media queries
+					$this->addCSS($asset, $targetTheme);
+				}
 			}
 		}
 	}
@@ -156,13 +182,11 @@ class AriaMLDocument {
 		if(isset($data['title']))
 			$props['metadatas']['title'] = [
 					"content"  => $this->formatMeta( $data['title'] ),
-					"property" => ["og:title"],
 					"name"     => ["title"]
 				];
 		if(isset($data['description']))
 			$props['metadatas']['description'] = [
 					"content"  => $this->formatMeta( $data['description'] ),
-					"property" => ["og:description"],
 					"name"     => ["description"]
 				];
 		
@@ -172,67 +196,92 @@ class AriaMLDocument {
 		return json_encode([$props], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 	}
 	
-	
 	function hydrateProperties(&$props, $head_html) {
+		// --- PARTIE 1 : META TAGS (Logique existante conservée) ---
 		$rawValues = [];
-		$rawTypes  = [];
+		$rawTypes = [];
 		preg_match_all('/<meta\s+([^>]+)>/i', $head_html, $matches);
 
 		foreach ($matches[1] as $attributes) {
 			$has_name     = preg_match('/name=["\']([^"\']+)["\']/i', $attributes, $n);
 			$has_property = preg_match('/property=["\']([^"\']+)["\']/i', $attributes, $p);
 			$has_content  = preg_match('/content=["\']([^"\']+)["\']/i', $attributes, $c);
-
 			if (!$has_content) continue;
-			
-			if ($has_name) {
-				$rawValues[$n[1]] = $c[1];
-				$rawTypes[$n[1]]  = 'name';
-			}
-			if ($has_property) {
-				$rawValues[$p[1]] = $c[1];
-				$rawTypes[$p[1]]  = 'property';
-			}
+			if ($has_name) { $rawValues[$n[1]] = $c[1]; $rawTypes[$n[1]] = 'name'; }
+			if ($has_property) { $rawValues[$p[1]] = $c[1]; $rawTypes[$p[1]] = 'property'; }
 		}
 
-		// 3. Résolution Agnostique des Suffixes
 		foreach ($rawValues as $key => $content) {
 			$parts = explode(':', $key);
 			$root  = end($parts); 
 			$type  = $rawTypes[$key];
 
-			// Cas A : La racine existe déjà (ex: title ou description initialisés)
 			if (isset($props['metadatas'][$root])) {
-				// Si le contenu est identique, on ajoute juste le sélecteur technique s'il manque
-				if ($props['metadatas'][$root]['content'] === $content) {
-					if (!in_array($key, $props['metadatas'][$root][$type])) {
-						$props['metadatas'][$root][$type][] = $key;
-					}
-				} 
-				// Si le contenu est différent (ex: Yoast a écrasé le title), on met à jour la racine
-				else {
-					$props['metadatas'][$root]['content'] = $content;
-					if (!in_array($key, $props['metadatas'][$root][$type])) {
-						$props['metadatas'][$root][$type][] = $key;
-					}
+				if (is_string($props['metadatas'][$root])) {
+					$props['metadatas'][$root] = ['content' => $props['metadatas'][$root], 'name' => [], 'property' => []];
 				}
-			} 
-			// Cas B : Nouvelle racine découverte (ex: image, keywords, robots)
-			else {
-				$props['metadatas'][$root] = [
-					'content'  => $content,
-					'name'     => ($type === 'name') ? [$key] : [],
-					'property' => ($type === 'property') ? [$key] : []
-				];
+				if ($props['metadatas'][$root]['content'] === $content) {
+					if (!in_array($key, $props['metadatas'][$root][$type])) $props['metadatas'][$root][$type][] = $key;
+				} else {
+					$props['metadatas'][$root]['content'] = $content;
+					if (!in_array($key, $props['metadatas'][$root][$type])) $props['metadatas'][$root][$type][] = $key;
+				}
+			} else {
+				$props['metadatas'][$root] = ['content' => $content, 'name' => ($type === 'name' ? [$key] : []), 'property' => ($type === 'property' ? [$key] : [])];
 			}
 		}
 
-		// 4. Nettoyage final (suppression des tableaux de sélecteurs vides)
+		// --- PARTIE 2 : LINK TAGS (Alternates & Links) ---
+		preg_match_all('/<link\s+([^>]+)>/i', $head_html, $linkMatches);
+		
+		$singletons = ['canonical', 'me', 'shortlink', 'manifest', 'author', 'license'];
+		$appearanceRels = ['stylesheet', 'icon', 'apple-touch-icon', 'shortcut icon'];
+
+		foreach ($linkMatches[1] as $attributes) {
+			$asset = [];
+			$targets = ['rel', 'href', 'type', 'title', 'hreflang'];
+			foreach ($targets as $attr) {
+				if (preg_match('/' . $attr . '=["\']([^"\']+)["\']/i', $attributes, $v)) $asset[$attr] = $v[1];
+			}
+
+			if (!isset($asset['rel']) || !isset($asset['href'])) continue;
+
+			$rel = strtolower($asset['rel']);
+
+			// Exclusion de l'apparence
+			if (in_array($rel, $appearanceRels)) continue;
+
+			// Cas A : Les Alternates
+			if (strpos($rel, 'alternate') !== false) {
+				// On nettoie le rel pour ne garder que ce qui n'est pas "alternate"
+				$cleanRel = trim(str_replace('alternate', '', $rel));
+				
+				if (empty($cleanRel)) {
+					unset($asset['rel']); // Suppression totale si c'était juste "alternate"
+				} else {
+					$asset['rel'] = $cleanRel; // On garde le reste (ex: "author" pour "alternate author")
+				}
+				$props['alternates'][] = $asset;
+			} 
+			// Cas B : Les autres liens (hors singletons)
+			else if (!in_array($rel, $singletons)) {
+				$props['links'][] = $asset;
+			}
+		}
+
+		// --- PARTIE 3 : NETTOYAGE ET SIMPLIFICATION ---
 		foreach ($props['metadatas'] as $key => $data) {
-			$props['metadatas'][$key] = array_filter($data, function($v) {
-				return !is_array($v) || !empty($v);
-			});
-			$props['metadatas'][$key]['content'] = $this->formatMeta( $props['metadatas'][$key]['content'] );
+			if (is_string($data)) {
+				$props['metadatas'][$key] = $this->formatMeta($data);
+				continue;
+			}
+			$data = array_filter($data, function($v) { return !is_array($v) || !empty($v); });
+			$data['content'] = $this->formatMeta($data['content']);
+			$hasName = isset($data['name']);
+			$hasProp = isset($data['property']);
+			$isRedundantName = ($hasName && count($data['name']) === 1 && $data['name'][0] === $key);
+			
+			$props['metadatas'][$key] = (!$hasProp && (!$hasName || $isRedundantName)) ? $data['content'] : $data;
 		}
 	}
 	
