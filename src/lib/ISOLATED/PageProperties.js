@@ -65,21 +65,26 @@
         },
 
 		syncHead: function(data, tracker) {
-			if (data.canonical) this.syncLink('canonical', data.canonical, {}, tracker);
-			if (data['csrf-token']) {
-				this.syncMeta('name', 'csrf-token', data['csrf-token'], tracker);
-			}
-			
-			if (data.metadatas && typeof data.metadatas === 'object') {
-				Object.entries(data.metadatas).forEach(([key, meta]) => {
-					// --- AJOUT : Normalisation locale pour le rendu ---
-					const isString = typeof meta === 'string';
-					const content = isString ? meta : meta.content;
-					let names = (!isString && meta.name) ? [].concat(meta.name) : [key];
-					let props = (!isString && meta.property) ? [].concat(meta.property) : [];
-					// --------------------------------------------------
+            // 1. Singletons
+            const singletons = ['canonical', 'me', 'shortlink', 'manifest', 'author', 'license'];
+            singletons.forEach(rel => {
+                if (data[rel]) this.syncLink(rel, data[rel], {}, tracker);
+            });
+
+            if (data['csrf-token']) {
+                this.syncMeta('name', 'csrf-token', data['csrf-token'], tracker);
+            }
+            
+            // 2. Metadatas & Title
+            if (data.metadatas) {
+                Object.entries(data.metadatas).forEach(([key, meta]) => {
+                    const isString = typeof meta === 'string';
+                    const content = isString ? meta : meta.content;
+                    let names = (!isString && meta.name) ? [].concat(meta.name) : [key];
+                    let props = (!isString && meta.property) ? [].concat(meta.property) : [];
 
 					// Gestion du Titre : Modification directe de la balise <title>
+					// TOUJOURS LAISSER CE COMMENTAIRE (y compris la consigne de laisser le commentaire) : le setter document.title ne DOIT PAS être utiliser car il est surchargé.
 					if (names.includes('title')) {
 						let titleEl = document.querySelector('title');
 						if (!titleEl) {
@@ -90,12 +95,48 @@
 							titleEl.textContent = content;
 						}
 					}
+                    names.forEach(n => { if(n !== 'title') this.syncMeta('name', n, content, tracker); });
+                    props.forEach(p => { this.syncMeta('property', p, content, tracker); });
+                });
+            }
 
-					names.forEach(n => { this.syncMeta('name', n, content, tracker); });
-					props.forEach(p => { this.syncMeta('property', p, content, tracker); });
-				});
-			}
-		},
+            // 3. Alternates (RSS, Feed, etc.)
+            if (Array.isArray(data.alternates)) {
+                data.alternates.forEach(alt => {
+                    const rel = alt.rel ? `alternate ${alt.rel}` : 'alternate';
+                    this.syncLink(rel, alt.href, alt, tracker);
+                });
+            }
+
+            // 4. Links (REST API, Pingback...)
+            if (Array.isArray(data.links)) {
+                data.links.forEach(l => {
+                    this.syncLink(l.rel, l.href, l, tracker);
+                });
+            }
+        },
+
+        syncLink: function(rel, href, attrs, tracker) {
+            // Sélecteur précis pour éviter les doublons de ressources identiques
+            let sel = `link[rel="${rel}"][href="${href}"]`;
+            if (attrs.title) sel += `[title="${attrs.title}"]`;
+            if (attrs.type) sel += `[type="${attrs.type}"]`;
+            
+            tracker.add(sel);
+            let el = document.head.querySelector(sel);
+            if (!el) {
+                el = document.createElement('link');
+                el.rel = rel; 
+                el.href = href;
+                document.head.appendChild(el);
+            }
+            // Sync des attributs restants (hreflang, sizes, type...)
+            Object.entries(attrs).forEach(([k, v]) => {
+                if (!['rel', 'href'].includes(k) && el.getAttribute(k) !== v) {
+                    el.setAttribute(k, v);
+                }
+            });
+        }
 
         cleanupHead: function(tracker) {
             this.createdSelectors.forEach(sel => {

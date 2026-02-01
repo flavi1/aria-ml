@@ -172,47 +172,67 @@ class AriaML {
     }
 
     public function renderHead() {
-        $tags = [];
+		$tags = [];
         $app = $this->appearance ?? [];
         $themeName = $app['defaultTheme'] ?? null;
         $themes = $app['themeList'] ?? [];
 
+        // 1. CSP & CSRF
         if (isset($this->attributes['csp'])) {
             $tags[] = '<meta http-equiv="Content-Security-Policy" content="'.htmlspecialchars($this->attributes['csp']).'">';
         }
         if (isset($this->config['csrf-token'])) {
             $tags[] = '<meta name="csrf-token" content="'.htmlspecialchars($this->config['csrf-token']).'">';
         }
-        if (isset($this->config['canonical'])) {
-            $tags[] = '<link rel="canonical" href="'.htmlspecialchars($this->config['canonical']).'">';
-        }
 
-        // Metadatas
-        if (isset($this->config['metadatas'])) {
-            foreach ($this->config['metadatas'] as $k => $m) {
-                $val = htmlspecialchars($m['content'] ?? '');
-                if (isset($m['name'])) {
-                    foreach ((array)$m['name'] as $n) {
-                        if ($n === 'title') $tags[] = "<title>$val</title>";
-                        else $tags[] = "<meta name=\"$n\" content=\"$val\">";
-                    }
-                }
-                if (isset($m['property'])) {
-                    foreach ((array)$m['property'] as $p) $tags[] = "<meta property=\"$p\" content=\"$val\">";
-                }
+        // 2. Singletons (Canonical, Me, etc.)
+        $singletons = ['canonical', 'me', 'shortlink', 'manifest', 'author', 'license'];
+        foreach($singletons as $rel) {
+            if (isset($this->config[$rel])) {
+                $tags[] = '<link rel="'.$rel.'" href="'.htmlspecialchars($this->config[$rel]).'">';
             }
         }
 
-        // Viewport & Color
+        // 3. Metadatas (Title, OG, Twitter...)
+        if (isset($this->config['metadatas'])) {
+            foreach ($this->config['metadatas'] as $k => $m) {
+                $isString = is_string($m);
+                $val = htmlspecialchars($isString ? $m : ($m['content'] ?? ''));
+                $names = (!$isString && isset($m['name'])) ? (array)$m['name'] : [$k];
+                $props = (!$isString && isset($m['property'])) ? (array)$m['property'] : [];
+
+                foreach ($names as $n) {
+                    if ($n === 'title') $tags[] = "<title>$val</title>";
+                    else $tags[] = "<meta name=\"$n\" content=\"$val\">";
+                }
+                foreach ($props as $p) $tags[] = "<meta property=\"$p\" content=\"$val\">";
+            }
+        }
+
+        // 4. Alternates (RSS, Translations...)
+        if (isset($this->config['alternates'])) {
+            foreach ($this->config['alternates'] as $alt) {
+                $alt['rel'] = isset($alt['rel']) ? "alternate " . $alt['rel'] : "alternate";
+                $tags[] = $this->buildLink($alt);
+            }
+        }
+
+        // 5. Links (API, Pingback...)
+        if (isset($this->config['links'])) {
+            foreach ($this->config['links'] as $l) $tags[] = $this->buildLink($l);
+        }
+
+        // 6. Viewport & Appearance Assets
         $vp = $themes[$themeName]['viewport'] ?? ($app['viewport'] ?? null);
         if ($vp) $tags[] = '<meta name="viewport" content="'.htmlspecialchars($vp).'">';
+        
         $clr = $themes[$themeName]['browserColor'] ?? ($app['browserColor'] ?? null);
         if ($clr) $tags[] = '<meta name="theme-color" content="'.htmlspecialchars($clr).'">';
-
-        // Assets
+        
         if (isset($app['assets'])) {
-            foreach ($app['assets'] as $a) $tags[] = $this->buildLink($a);
+            foreach ($app['assets'] as $a) $tags[] = $this->buildLink(is_string($a) ? ['href' => $a, 'rel' => 'stylesheet'] : $a);
         }
+        // 7. Themes
         foreach ($themes as $name => $data) {
             $active = ($name === $themeName);
             foreach ($data['assets'] ?? [] as $a) {
