@@ -12,6 +12,7 @@ class AriaMLDocument {
 
 	public static $autoUpdate = true;
 	
+	public $JSON_TOKENS = JSON_UNESCAPED_SLASHES;
 	public $cleanCSSIds = true;
 	public $browserColor = null;
 	public $viewport = 'width=device-width, initial-scale=1';
@@ -81,21 +82,18 @@ class AriaMLDocument {
 	}
 
 	function outputAppearence() {
+		$appearance = [];
+
+		// On n'ajoute que si non vide
+		if (!empty($this->styles)) $appearance['assets'] = $this->styles;
+		if (!empty($this->volatileClasses)) $appearance['volatileClasses'] = $this->volatileClasses;
+		if (!empty($this->themeList)) $appearance['themeList'] = $this->themeList;
+		if (!empty($this->browserColor)) $appearance['browserColor'] = $this->browserColor;
+		if (!empty($this->viewport)) $appearance['viewport'] = $this->viewport;
+		if (!empty($this->defaultTheme)) $appearance['defaultTheme'] = $this->defaultTheme;
 		
-		$appearance = [
-			"assets" => $this->styles,
-			"volatileClasses" => $this->volatileClasses,
-			"themeList" => $this->themeList
-		];
-		
-		if($this->browserColor)
-			$appearance['browserColor'] = $this->browserColor;
-		if($this->viewport)
-			$appearance['viewport'] = $this->viewport;
-		if($this->defaultTheme)
-			$appearance['defaultTheme'] = $this->defaultTheme;
 				
-		return json_encode($appearance, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+		return json_encode($appearance, $this->JSON_TOKENS);
 	}
 	
 	function addVolatileClasses($selector, $classes, $theme = null) {
@@ -193,7 +191,12 @@ class AriaMLDocument {
 		if($head_html)
 			$this->hydrateProperties($props, $head_html);
 		
-		return json_encode([$props], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+		// Nettoyage final avant encodage
+		foreach (['metadatas', 'alternates', 'links'] as $key) {
+			if (empty($props[$key])) unset($props[$key]);
+		}
+		
+		return json_encode([$props], $this->JSON_TOKENS);
 	}
 	
 	function hydrateProperties(&$props, $head_html) {
