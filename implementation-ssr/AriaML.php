@@ -110,19 +110,6 @@ class AriaML {
         }
     }
 
-    /**
-     * Gère la sortie finale (Orchestrateur)
-     */
-    public static function handle($testClient = false) {
-        $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
-        $cache = $_SERVER['HTTP_LIVE_CACHE'] ?? '[]';
-        
-        $wantsFragment = (strpos($accept, 'aria-ml-fragment') !== false);
-        $wantsAriaML = ($testClient || $wantsFragment || strpos($accept, 'text/aria-ml') !== false);
-        $knownKeys = json_decode($cache, true) ?? [];
-
-        ob_start();
-
 	/**
      * Gère la sortie finale (Orchestrateur)
      */
