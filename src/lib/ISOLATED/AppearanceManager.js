@@ -106,6 +106,10 @@
         },
 
         syncLink: function(asset, tracker, isActive) {
+            if (typeof asset === 'string') {
+                asset = { rel: 'stylesheet', href: asset };
+            }
+
             const isFF = navigator.userAgent.toLowerCase().indexOf('firefox') >= 0;
             
             let sel = `link[href="${asset.href}"]`;
@@ -113,6 +117,9 @@
 
             if (!el) {
                 el = document.createElement('link');
+                // On applique les attributs par défaut si manquants
+                const finalRel = asset.rel || 'stylesheet';
+                
                 Object.entries(asset).forEach(([k, v]) => {
                     if (k === 'title' && !isFF) {
                         el.setAttribute('data-title', v);
@@ -120,6 +127,10 @@
                         el.setAttribute(k, v);
                     }
                 });
+                
+                // Sécurité si rel n'était pas dans l'objet
+                if (!el.rel) el.rel = finalRel;
+                
                 document.head.appendChild(el);
             }
 
@@ -131,6 +142,7 @@
                     el.dataset.title = title;
                 }
 
+                // Gestion de l'alternance (Thèmes)
                 el.rel = isActive ? 'stylesheet' : 'alternate stylesheet';
                 
                 if (!isFF)
@@ -139,7 +151,9 @@
 
                 if (isActive) el.media = asset.media || 'all';
             } else {
+                // Asset persistant (sans titre de thème)
                 el.disabled = false;
+                if (asset.media) el.media = asset.media;
             }
             
             tracker.add(`link[href="${asset.href}"]`);
