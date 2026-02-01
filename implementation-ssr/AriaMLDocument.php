@@ -2,15 +2,18 @@
 
 
 class AriaMLDocument {
-	
-	static protected $volatileClasses = [];
-	static protected $styles = [];
-	static protected $themeList = [];
-	static protected $browserColor = null;
-	static protected $viewport = 'width=device-width, initial-scale=1';
-	static protected $defaultTheme = null;
+
 	static protected $autoUpdate = true;
-	static protected $isLoaded = false;
+	static protected $isLoaded = false;	
+
+	protected $volatileClasses = [];
+	protected $styles = [];
+	protected $themeList = [];
+	protected $browserColor = null;
+	protected $viewport = 'width=device-width, initial-scale=1';
+	protected $defaultTheme = null;
+	protected $callback = null;
+
 	
 	static function load() {
 		if(self::$isLoaded)
@@ -32,38 +35,79 @@ class AriaMLDocument {
 		require_once $local_path;
 		self::$isLoaded = true;
 	}
+	
+	function __construct() {
+		if(!self::$isLoaded)
+			self::load();
+		$this->callback = AriaML::handle();
+	}
+	
+    function extractInlineStyles($head_html) {
+        if (empty($head_html)) return [];
+        $styles = [];
 
-	static function outputAppearence() {
+        preg_match_all('/<style[^>]*?>.*?<\/style>/is', $head_html, $matches);
+        if (!empty($matches[0])) {
+            foreach ($matches[0] as $style_block) {
+                $styles[] = $style_block;
+            }
+        }
+        return $styles;
+    }
+    
+    function extractScripts($head_html) {
+        if (empty($head_html)) return [];
+        $scripts = [];
+
+        preg_match_all('/<script[^>]*?>.*?<\/script>/is', $head_html, $matches);
+        if (!empty($matches[0])) {
+            foreach ($matches[0] as $script_block) {
+                $scripts[] = $script_block;
+            }
+        }
+        return $scripts;
+    }
+	
+	function formatMeta($text) {
+		if ( is_null( $text ) )
+			return '';
+		$text = html_entity_decode($text, ENT_QUOTES, 'UTF-8');
+		$text = preg_replace( '@<(script|style)[^>]*?>.*?</\\1>@si', '', $text );
+		$text = strip_tags( $text );
+		return trim( $text );
+	}
+
+	function outputAppearence() {
 		
 		$appearance = [
-			"assets" => self::$styles,
-			"volatileClasses" => self::$volatileClasses,
-			"themeList" => self::$themeList
+			"assets" => $this->styles,
+			"volatileClasses" => $this->volatileClasses,
+			"themeList" => $this->themeList
 		];
 		
-		if(self::$browserColor)
-			$appearance['browserColor'] = self::$browserColor;
-		if(self::$viewport)
-			$appearance['viewport'] = self::$viewport;
-		if(self::$defaultTheme)
-			$appearance['defaultTheme'] = self::$defaultTheme;
+		if($this->browserColor)
+			$appearance['browserColor'] = $this->browserColor;
+		if($this->viewport)
+			$appearance['viewport'] = $this->viewport;
+		if($this->defaultTheme)
+			$appearance['defaultTheme'] = $this->defaultTheme;
 				
 		return json_encode($appearance, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 	}
 	
-	static function addVolatileClasses($selector, $classes, $theme = null) {
+	function addVolatileClasses($selector, $classes, $theme = null) {
 		if ($theme) {
-			self::$themeList[$theme]['volatileClasses'][$selector] = $classes;
+			$this->themeList[$theme]['volatileClasses'][$selector] = $classes;
 		} else {
-			self::$volatileClasses[$selector] = $classes;
+			$this->volatileClasses[$selector] = $classes;
 		}
 	}
 	
-	static function addCSS($asset, $theme = null) {
+	function addCSS($asset, $theme = null) {
 		if ($theme) {
-			self::$themeList[$theme]['assets'][] = $asset;
+			$this->themeList[$theme]['assets'][] = $asset;
 		} else {
-			self::$styles[] = $asset;
+			$this->styles[] = $asset;
 		}
 	}
 	
@@ -71,7 +115,7 @@ class AriaMLDocument {
 	 * Extrait les liens (CSS, Icons) d'un bloc HTML pour remplir les assets AriaML
 	 * @param string $head_html Le HTML brut du head (ex: résultat de wp_head())
 	 */
-	static function hydrateAssets($head_html) {
+	function hydrateAssets($head_html) {
 		if (empty($head_html)) return;
 
 		// On cherche toutes les balises <link>
@@ -91,52 +135,12 @@ class AriaMLDocument {
 
 			// On ne garde que si href et rel sont présents
 			if (isset($asset['href']) && isset($asset['rel'])) {
-				self::addCSS($asset);
+				$this->addCSS($asset);
 			}
 		}
 	}
 	
-	/**
-     * Extrait les blocs <style> complets du HTML fourni
-     * @param string $head_html Le HTML brut (ex: wp_head())
-     * @return array Tableau de chaînes contenant le outerHTML des balises <style>
-     */
-    static function extractInlineStyles($head_html) {
-        if (empty($head_html)) return [];
-        $styles = [];
-
-        preg_match_all('/<style[^>]*?>.*?<\/style>/is', $head_html, $matches);
-        if (!empty($matches[0])) {
-            foreach ($matches[0] as $style_block) {
-                $styles[] = $style_block;
-            }
-        }
-        return $styles;
-    }
-    
-    static function extractScripts($head_html) {
-        if (empty($head_html)) return [];
-        $scripts = [];
-
-        preg_match_all('/<script[^>]*?>.*?<\/script>/is', $head_html, $matches);
-        if (!empty($matches[0])) {
-            foreach ($matches[0] as $script_block) {
-                $scripts[] = $script_block;
-            }
-        }
-        return $scripts;
-    }
-	
-	static function formatMeta($text) {
-		if ( is_null( $text ) )
-			return '';
-		$text = html_entity_decode($text, ENT_QUOTES, 'UTF-8');
-		$text = preg_replace( '@<(script|style)[^>]*?>.*?</\\1>@si', '', $text );
-		$text = strip_tags( $text );
-		return trim( $text );
-	}
-	
-	static function outputPageProperties($data = [], $head_html = null) {
+	function outputPageProperties($data = [], $head_html = null) {
 		
 		// 1. Initialisation de base (Fallbacks de référence)
 		$props = [
@@ -151,25 +155,25 @@ class AriaMLDocument {
 			$props['csrf-token'] = $data['csrf-token'];
 		if(isset($data['title']))
 			$props['metadatas']['title'] = [
-					"content"  => self::formatMeta( $data['title'] ),
+					"content"  => $this->formatMeta( $data['title'] ),
 					"property" => ["og:title"],
 					"name"     => ["title"]
 				];
 		if(isset($data['description']))
 			$props['metadatas']['description'] = [
-					"content"  => self::formatMeta( $data['description'] ),
+					"content"  => $this->formatMeta( $data['description'] ),
 					"property" => ["og:description"],
 					"name"     => ["description"]
 				];
 		
 		if($head_html)
-			self::hydrateProperties($props, $head_html);
+			$this->hydrateProperties($props, $head_html);
 		
 		return json_encode([$props], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 	}
 	
 	
-	static function hydrateProperties(&$props, $head_html) {
+	function hydrateProperties(&$props, $head_html) {
 		$rawValues = [];
 		$rawTypes  = [];
 		preg_match_all('/<meta\s+([^>]+)>/i', $head_html, $matches);
@@ -228,22 +232,11 @@ class AriaMLDocument {
 			$props['metadatas'][$key] = array_filter($data, function($v) {
 				return !is_array($v) || !empty($v);
 			});
-			$props['metadatas'][$key]['content'] = self::formatMeta( $props['metadatas'][$key]['content'] );
+			$props['metadatas'][$key]['content'] = $this->formatMeta( $props['metadatas'][$key]['content'] );
 		}
 	}
 	
-	protected $render = null;
-	
-	function __construct() {
-		if(!self::$isLoaded)
-			self::load();
-		$this->render = AriaML::handle();
-	}
-	
-	/**
-     * Génère la chaîne d'attributs HTML sécurisée
-     */
-    static function renderAttributes($attrs) {
+    function renderAttributes($attrs) {
         if (empty($attrs) || !is_array($attrs)) return '';
         
         $html = '';
@@ -257,7 +250,7 @@ class AriaMLDocument {
     }
 	
 	function end() {
-		$cb = $this->render;
+		$cb = $this->callback;
 		$cb();
 	}
 	
