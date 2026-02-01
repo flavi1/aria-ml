@@ -61,7 +61,7 @@
 					"lib/RootNode.js",
 					
 					"lib/ISOLATED/PageProperties.js",
-					"lib/PageProperties.js",
+					"lib/PageProperties.Proxy.js",
 					
 					"lib/ISOLATED/ThemeManager.js",
 					"lib/ISOLATED/AppearanceManager.js",

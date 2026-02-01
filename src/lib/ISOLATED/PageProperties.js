@@ -43,7 +43,6 @@
             return null;
         },
 
-        // ... syncRootAttributes, syncHead, cleanupHead, syncMeta, syncLink restent identiques ...
         syncRootAttributes: function(rootAria, data) {
             const rootProps = { 'lang': data.lang, 'dir': data.dir, 'translate': data.translate };
             Object.entries(rootProps).forEach(([k, v]) => {
@@ -73,9 +72,12 @@
 			
 			if (data.metadatas && typeof data.metadatas === 'object') {
 				Object.entries(data.metadatas).forEach(([key, meta]) => {
-					const content = meta.content;
-					let names = meta.name ? [].concat(meta.name) : [key];
-					let props = meta.property ? [].concat(meta.property) : [];
+					// --- AJOUT : Normalisation locale pour le rendu ---
+					const isString = typeof meta === 'string';
+					const content = isString ? meta : meta.content;
+					let names = (!isString && meta.name) ? [].concat(meta.name) : [key];
+					let props = (!isString && meta.property) ? [].concat(meta.property) : [];
+					// --------------------------------------------------
 
 					// Gestion du Titre : Modification directe de la balise <title>
 					if (names.includes('title')) {

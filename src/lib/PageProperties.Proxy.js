@@ -60,11 +60,21 @@
                 const value = Reflect.get(target, prop);
                 return (value && typeof value === 'object') ? createDeepProxy(value, onChange) : value;
             },
-            set(target, prop, value) {
-                const res = Reflect.set(target, prop, value);
-                onChange();
-                return res;
-            }
+			set(target, prop, value) {
+				// Mutation silencieuse si assignation de string dans metadatas
+				// Si on modifie une propriété de 'metadatas' avec une string
+				if (typeof value === 'string' && target === window.PageProperties?.metadatas) {
+					if (!target[prop] || typeof target[prop] !== 'object') {
+						target[prop] = { content: value };
+					} else {
+						target[prop].content = value;
+					}
+				} else {
+					Reflect.set(target, prop, value);
+				}				
+				onChange();
+				return true;
+			}
         });
     }
 
