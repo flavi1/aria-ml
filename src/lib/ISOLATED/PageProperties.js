@@ -136,7 +136,7 @@
                     el.setAttribute(k, v);
                 }
             });
-        }
+        },
 
         cleanupHead: function(tracker) {
             this.createdSelectors.forEach(sel => {
