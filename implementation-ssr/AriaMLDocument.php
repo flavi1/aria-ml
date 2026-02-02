@@ -92,7 +92,6 @@ class AriaMLDocument {
 		if (!empty($this->viewport)) $appearance['viewport'] = $this->viewport;
 		if (!empty($this->defaultTheme)) $appearance['defaultTheme'] = $this->defaultTheme;
 		
-				
 		return json_encode($appearance, $this->JSON_TOKENS);
 	}
 	
@@ -111,6 +110,41 @@ class AriaMLDocument {
 			$this->themeList[$theme]['assets'][] = $asset;
 		} else {
 			$this->styles[] = $asset;
+		}
+	}
+	
+/**
+	 * Ajoute ou met à jour un thème complet dans la liste des thèmes.
+	 * * @param string $name Nom du thème (ex: "ThemeSombre")
+	 * @param array $config Configuration (media, browserColor, viewport, volatileClasses, assets)
+	 */
+	function addTheme($name, $config = []) {
+		if (!isset($this->themeList[$name])) {
+			$this->themeList[$name] = [
+				"assets" => []
+			];
+		}
+
+		// 1. Propriétés directes
+		if (isset($config['media'])) $this->themeList[$name]['media'] = $config['media'];
+		if (isset($config['browserColor'])) $this->themeList[$name]['browserColor'] = $config['browserColor'];
+		if (isset($config['viewport'])) $this->themeList[$name]['viewport'] = $config['viewport'];
+
+		// 2. Gestion des Volatile Classes spécifiques au thème
+		if (isset($config['volatileClasses'])) {
+			if (!isset($this->themeList[$name]['volatileClasses'])) {
+				$this->themeList[$name]['volatileClasses'] = [];
+			}
+			foreach ($config['volatileClasses'] as $selector => $classes) {
+				$this->addVolatileClasses($selector, $classes, $name);
+			}
+		}
+
+		// 3. Gestion des Assets (CSS / Icons)
+		if (isset($config['assets'])) {
+			foreach ((array)$config['assets'] as $asset) {
+				$this->addCSS($asset, $name);
+			}
 		}
 	}
 	
