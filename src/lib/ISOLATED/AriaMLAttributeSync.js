@@ -96,5 +96,5 @@ class AriaMLAttributeSync {
     }
 }
 
-AriaMLAttributeSync.observeAndSync('aria-ml', document.body);
+AriaMLAttributeSync.observeAndSync('aria-ml', document.documentElement);
 AriaMLAttributeSync.observeAndSync('#body', document.body);
