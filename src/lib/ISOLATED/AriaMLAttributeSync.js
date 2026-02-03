@@ -5,11 +5,35 @@
  */
 class AriaMLAttributeSync {
     constructor(source, target) {
+        if (!source || !target) return;
         this.source = source;
         this.target = target;
-        this.isSyncing = false; // Flag pour éviter les boucles infinies de mutations
-
+        this.isSyncing = false;
         this.init();
+    }
+
+    /**
+     * Tente de synchroniser dès que possible.
+     * @param {string} selector - Le sélecteur de l'élément à surveiller.
+     * @param {HTMLElement} target - L'élément cible (ex: document.body).
+     */
+    static observeAndSync(selector, target) {
+        const el = document.querySelector(selector);
+        
+        if (el) {
+            return new AriaMLAttributeSync(el, target);
+        }
+
+        // Si l'élément n'existe pas encore, on surveille l'apparition dans le DOM
+        const observer = new MutationObserver((mutations, obs) => {
+            const found = document.querySelector(selector);
+            if (found) {
+                new AriaMLAttributeSync(found, target);
+                obs.disconnect(); // On arrête de surveiller une fois trouvé
+            }
+        });
+
+        observer.observe(document.documentElement, { childList: true, subtree: true });
     }
 
     init() {
@@ -72,10 +96,5 @@ class AriaMLAttributeSync {
     }
 }
 
-// Au démarrage du moteur
-const ariaRoot = document.querySelector('aria-ml');
-const htmlEl = document.documentElement;
-
-// On crée la liaison vivante
-window.AriaMLSync = new AriaMLAttributeSync(ariaRoot, htmlEl);
-window.ViewportSync = new AriaMLAttributeSync(ariaRoot, document.body);
+AriaMLAttributeSync.observeAndSync('aria-ml', document.body);
+AriaMLAttributeSync.observeAndSync('#body', document.body);
