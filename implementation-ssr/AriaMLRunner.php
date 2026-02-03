@@ -7,7 +7,7 @@ class AriaMLRunner {
 	static protected $files = [
 		'https://flavi1.github.io/aria-ml/implementation-ssr/AriaML.php' => __DIR__ . '/AriaML.php',
 		'https://flavi1.github.io/aria-ml/implementation-ssr/AriaMLDocument.php' => __DIR__ . '/AriaMLDocument.php'
-	]
+	];
 	
 	static function update() {
 
