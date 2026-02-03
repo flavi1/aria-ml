@@ -3,46 +3,18 @@
 
 class AriaMLDocument {
 
-	static protected $isLoaded = false;	
-
 	protected $volatileClasses = [];
 	protected $styles = [];
 	protected $themeList = [];
 	protected $callback = null;
-
-	public static $autoUpdate = true;
 	
 	public $JSON_TOKENS = JSON_UNESCAPED_SLASHES;
 	public $cleanCSSIds = true;
 	public $browserColor = null;
 	public $viewport = 'width=device-width, initial-scale=1';
 	public $defaultTheme = null;
-
-	
-	static function load() {
-		if(self::$isLoaded)
-			return;
-		
-		$local_path = __DIR__ . '/AriaML.php';
-		
-		if(self::$autoUpdate) {
-			$remote_url = 'https://flavi1.github.io/aria-ml/implementation-ssr/AriaML.php';
-
-			// Téléchargement synchrone immédiat
-			$ctx = stream_context_create(['http' => ['timeout' => 10]]);
-			$remote_content = @file_get_contents($remote_url, false, $ctx);
-			
-			if ($remote_content !== false && !empty($remote_content)) {
-				file_put_contents($local_path, $remote_content);
-			}
-		}
-		require_once $local_path;
-		self::$isLoaded = true;
-	}
 	
 	function __construct() {
-		if(!self::$isLoaded)
-			self::load();
 		$this->callback = AriaML::handle();
 	}
 	
