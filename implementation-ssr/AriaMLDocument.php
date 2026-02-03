@@ -16,6 +16,7 @@ class AriaMLDocument {
 	
 	function __construct() {
 		$this->callback = AriaML::handle();
+		die('Ok :)');
 	}
 	
     function extractInlineStyles($head_html) {
