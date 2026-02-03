@@ -58,7 +58,7 @@
 			if (csp) {
 				this.syncMeta(null, 'Content-Security-Policy', csp, new Set(), true);
 			}
-		}
+		},
 
 		syncHead: function(data, tracker) {
             // 1. Singletons
