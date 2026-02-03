@@ -43,26 +43,22 @@
             return null;
         },
 
-        syncRootAttributes: function(rootAria, data) {
-            const rootProps = { 'lang': data.lang, 'dir': data.dir, 'translate': data.translate };
-            Object.entries(rootProps).forEach(([k, v]) => {
-                if (v && rootAria.getAttribute(k) !== v) rootAria.setAttribute(k, v);
-            });
-
-            Array.from(rootAria.attributes).forEach(attr => {
-                if (attr.name === 'csp') {
-                    this.syncMeta(null, 'Content-Security-Policy', attr.value, new Set(), true);
-                } else if (attr.name === 'class') {
-                    attr.value.split(/\s+/).forEach(cls => {
-                        if (cls && !document.documentElement.classList.contains(cls)) {
-                            document.documentElement.classList.add(cls);
-                        }
-                    });
-                } else if (document.documentElement.getAttribute(attr.name) !== attr.value) {
-                    document.documentElement.setAttribute(attr.name, attr.value);
-                }
-            });
-        },
+		syncRootAttributes: function(rootAria, data) {
+			// On ne synchronise ici que les métadonnées logiques issues de PageProperties
+			const rootProps = { 'lang': data.lang, 'dir': data.dir, 'translate': data.translate };
+			Object.entries(rootProps).forEach(([k, v]) => {
+				// En modifiant rootAria (source), l'Observer mettra à jour automatiquement le documentElement (target)
+				if (v && rootAria.getAttribute(k) !== v) {
+					rootAria.setAttribute(k, v);
+				}
+			});
+			
+			// La gestion du CSP reste ici car elle impacte les balises meta, pas les attributs du tag
+			const csp = rootAria.getAttribute('csp');
+			if (csp) {
+				this.syncMeta(null, 'Content-Security-Policy', csp, new Set(), true);
+			}
+		}
 
 		syncHead: function(data, tracker) {
             // 1. Singletons

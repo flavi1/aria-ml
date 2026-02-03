@@ -60,6 +60,7 @@
 					
 					"lib/RootNode.js",
 					
+					"lib/ISOLATED/AriaMLAttributeSync.js",
 					"lib/ISOLATED/PageProperties.js",
 					"lib/PageProperties.Proxy.js",
 					
