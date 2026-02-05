@@ -100,7 +100,7 @@ class AriaML {
         if (empty($keys)) return;
         $xpath = new DOMXPath($this->dom);
         foreach ($keys as $key) {
-            $nodes = $xpath->query(".//*[@live-cache='" . htmlspecialchars($key) . "']", $this->ariaNode);
+            $nodes = $xpath->query(".//*[@nav-cache='" . htmlspecialchars($key) . "']", $this->ariaNode);
             foreach ($nodes as $node) {
                 while ($node->hasChildNodes()) {
                     $node->removeChild($node->firstChild);
