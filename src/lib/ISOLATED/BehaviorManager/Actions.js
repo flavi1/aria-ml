@@ -34,11 +34,11 @@ const behaviorActions = (() => {
     };
 
     const actions = {
-        'log': (el, { args }) => {
+        'log': (el, { args, event }) => {
             const logs = args.map(a => resolveTarget(el, a));
             console.group('[AriaML Action Log]');
             console.log('Targets Resolved:', logs);
-            console.log('Source context:', el);
+            console.log('Source context:', {el, event});
             console.groupEnd();
         },
 
@@ -143,7 +143,20 @@ const behaviorActions = (() => {
 
         'stop': (el, { event }) => {
             if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-        }
+        },
+        'update-current': (el, { args, event }) => {
+			if(event.detail.type == args[0]) {
+				const t = resolveTarget(el, args[1]);
+				if(t.type == 'attribute' && t.nodes.length) {
+					t.nodes.forEach((n) => {
+						if(n.getAttribute(t.name) != event.detail.value)
+							n.removeAttribute('aria-current')
+						else
+							n.setAttribute('aria-current', event.detail.type)
+					})
+				}
+			}
+		}
     };
 
 	const execute = async (el, evName, behaviorStr, originalEvent = null) => {

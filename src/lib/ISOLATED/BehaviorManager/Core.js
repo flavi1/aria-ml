@@ -1,6 +1,6 @@
 /**
  * Core.js
- * Orchestrateur v1.4.4 - Full-Scan, Anti-Cycle, Order & Keyboard
+ * Orchestrateur v1.4.7 - Full-Scan, Order, Keyboard & Semantic Subscription Registry
  */
 const behaviorCore = (() => {
     const definitionFactory = GlobalSheetParser('behavior', 'script[type="behavior"], script[type="text/behavior"]', 'src');
@@ -8,14 +8,18 @@ const behaviorCore = (() => {
     const registeredEvents = new Set();
     const patterns = new Map();
     
+    // Registre des éléments abonnés aux événements globaux (ex: current-change)
+    const globalSubscribers = {
+        'current-change': new Set()
+    };
+    
     let isProcessing = false;
     let mutationObserver = null;
-    const activeKeys = new Set();
 
     const definePattern = (name, props) => patterns.set(name, props);
 
     const getResolvedProps = (el) => {
-        if (!el.behavior) return {};
+        if (!el || !el.behavior) return {};
         const rawProps = el.behavior.computed;
         const resolved = {};
         const patternName = rawProps['behavior'];
@@ -51,9 +55,8 @@ const behaviorCore = (() => {
     };
 
     const registerGlobalEvent = (type) => {
-        // Ne pas enregistrer les types internes ou déjà présents
-        if (registeredEvents.has(type) || ['clickout', 'init', 'apply'].includes(type) || type.startsWith('kb-')) return;
-        
+        // "current-change" et "clickout" sont gérés par délégation spécifique
+        if (registeredEvents.has(type) || ['clickout', 'init', 'apply', 'current-change'].includes(type) || type.startsWith('kb-')) return;
         
         document.addEventListener(type, async (e) => {
             const el = (e.target == document) ? document.documentElement : e.target.closest('*');
@@ -73,22 +76,33 @@ const behaviorCore = (() => {
     };
 
     const processLifecycle = async (el) => {
-
         if (!(el instanceof HTMLElement) || !el.behavior) return;
-        if (!el.behavior.hasChanged()) return;
+        
+        // Nettoyage des anciens abonnements si l'élément est ré-évalué
+        globalSubscribers['current-change'].delete(el);
+
+        if (!el.behavior.hasChanged()) {
+            // Si l'élément n'a pas changé mais possède toujours l'action, on le maintient dans le registre
+            if (el.behavior.computed['on-current-change']) globalSubscribers['current-change'].add(el);
+            return;
+        }
 
         const props = getResolvedProps(el);
-
         if (Object.keys(props).length === 0) return;
 
-        // Enregistrement dynamique (Events standards)
+        // Inscription au registre sémantique si la propriété est présente
+        if (props['on-current-change']) {
+            globalSubscribers['current-change'].add(el);
+        }
+
+        // Enregistrement des événements standards
         Object.keys(props).forEach(key => {
             if (key.startsWith('on-')) {
                 registerGlobalEvent(key.replace('on-', ''));
             }
         });
 
-        // Initialisation
+        // Initialisation unique
         if (!initializedElements.has(el)) {
             const initAction = props['on-init'] || props['init'];
             if (initAction) {
@@ -99,10 +113,8 @@ const behaviorCore = (() => {
             initializedElements.add(el);
         }
 
-        // Structure (Order)
         if (props.order !== undefined) applyOrder(el);
 
-        // Application (Mutation)
         if (props['on-apply']) {
             isProcessing = true;
             await behaviorActions.execute(el, 'on-apply', props['on-apply']);
@@ -110,7 +122,6 @@ const behaviorCore = (() => {
         }
     };
 
-	// Fonction de scan complet
     const fullScan = () => {
         if (isProcessing) return;
         console.info("[AriaML] Scanning for behavior changes...");
@@ -118,54 +129,44 @@ const behaviorCore = (() => {
     };
 
     const start = async () => {
-		// Branchement de la réactivité sur les nouvelles feuilles
         definitionFactory.onRefresh(() => {
-            // On laisse un micro-tick au navigateur pour appliquer le CSS injecté
             requestAnimationFrame(fullScan);
         });
 
-        // Attente du chargement initial
         await definitionFactory.ready;
 
-		// 1. Gestion Clavier Optimisée (kb-key1-key2)
-		const keysDown = new Set();
+        // 1. Gestion Clavier
+        const keysDown = new Set();
+        document.addEventListener('keydown', (e) => {
+            const k = e.key.toLowerCase();            
+            if (keysDown.has(k)) return; 
+            keysDown.add(k);
+            const combo = Array.from(keysDown).sort().join('-');
+            const kbEventName = 'kb-' + combo;
+            const el = e.target.closest('*');
+            if (!el || !el.behavior) return;
+            const props = getResolvedProps(el);
+            const action = props['on-' + kbEventName] || props[kbEventName];
+            if (action) {
+                isProcessing = true;
+                behaviorActions.execute(el, kbEventName, action, e);
+                isProcessing = false;
+            }
+        });
+        document.addEventListener('keyup', (e) => keysDown.delete(e.key.toLowerCase()));
+        window.addEventListener('blur', () => keysDown.clear());
 
-		document.addEventListener('keydown', (e) => {
-			const k = e.key.toLowerCase();			
-			// Empêche l'auto-répétition du système d'exploitation
-			if (keysDown.has(k)) return; 
-			
-			keysDown.add(k);
-			
-			const combo = Array.from(keysDown).sort().join('-');
-			const kbEventName = 'kb-' + combo;
-			
-			const el = e.target.closest('*');
-			if (!el || !el.behavior) return;
-
-			const props = getResolvedProps(el);
-			const action = props['on-' + kbEventName] || props[kbEventName];
-
-			if (action) {
-				isProcessing = true;
-				behaviorActions.execute(el, kbEventName, action, e);
-				isProcessing = false;
-			}
-		});
-
-		document.addEventListener('keyup', (e) => {
-			keysDown.delete(e.key.toLowerCase());
-		});
-
-		// Reset de sécurité si on change de fenêtre (évite les touches "bloquées")
-		window.addEventListener('blur', () => keysDown.clear());
-
-        // 2. MutationObserver (Anti-cycle)
+        // 2. MutationObserver
         mutationObserver = new MutationObserver(mutations => {
             if (isProcessing) return;
             mutations.forEach(m => {
                 if (m.type === 'childList') {
-                    m.addedNodes.forEach(n => { if (n instanceof HTMLElement) processLifecycle(n); });
+                    m.addedNodes.forEach(n => { 
+                        if (n instanceof HTMLElement) processLifecycle(n); 
+                    });
+                    m.removedNodes.forEach(n => {
+                        if (n instanceof HTMLElement) globalSubscribers['current-change'].delete(n);
+                    });
                 } else {
                     processLifecycle(m.target);
                 }
@@ -182,6 +183,7 @@ const behaviorCore = (() => {
 
         // 4. Gestion Click-Out
         document.addEventListener('click', async (e) => {
+            // Le click-out reste sur un scan global car il dépend de la position de la souris relative à TOUS les éléments
             document.querySelectorAll('*').forEach(el => {
                 if (!el.behavior) return;
                 const props = getResolvedProps(el);
@@ -193,48 +195,47 @@ const behaviorCore = (() => {
                 }
             });
         }, true);
-        
-		// 4. Délégation de l'événement sémantique "current-change" (Inspiration Click-out)
+
+        // 4. Délégation "current-change" OPTIMISÉE
         document.addEventListener('current-change', async (e) => {
-            // On scanne tous les éléments pour trouver ceux qui écoutent cet événement global
-            document.querySelectorAll('*').forEach(el => {
-                if (!el.behavior) return;
+            // On n'itère QUE sur les éléments inscrits dans le registre
+            globalSubscribers['current-change'].forEach(async (el) => {
+                // Sécurité : si l'élément n'est plus dans le DOM, on le retire
+                if (!el.isConnected) {
+                    globalSubscribers['current-change'].delete(el);
+                    return;
+                }
                 const props = getResolvedProps(el);
                 const action = props['on-current-change'];
                 if (action) {
                     isProcessing = true;
-                    behaviorActions.execute(el, 'current-change', action, e);
+                    await behaviorActions.execute(el, 'current-change', action, e);
                     isProcessing = false;
                 }
             });
         }, true);
 
-		// Scan initial
         fullScan();
         
-		// Activation MutationObserver pour le DOM
         mutationObserver.observe(document.documentElement, { 
             childList: true, 
             subtree: true, 
             attributes: true 
         });
         
-        console.info("[AriaML] Core 1.4.4 : Full-Scan, Order & Keyboard Ready.");
+        console.info("[AriaML] Core 1.4.7 : Semantic Registry Ready.");
     };
 
     return { start, fullScan, definitionFactory, definePattern, getResolvedProps, applyOrder };
 })();
 
-// Fonction de lancement sécurisée
 const initAriaML = () => {
     console.log('[AriaML] Lancement du moteur...');
     behaviorCore.start();
 };
 
-// Si le DOM est déjà prêt (ou en cours de finalisation), on lance immédiatement
 if (document.readyState === 'interactive' || document.readyState === 'complete') {
     initAriaML();
 } else {
-    // Sinon, on attend sagement l'événement
     document.addEventListener('DOMContentLoaded', initAriaML);
 }

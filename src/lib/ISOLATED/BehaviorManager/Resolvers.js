@@ -4,7 +4,7 @@
  */
 const behaviorResolvers = (() => {
     // Niveau de log : 0: Off, 1: Error, 2: Info (Chains), 3: Debug (Segments)
-    const LOG_LEVEL = window.ARIAML_LOG_LEVEL || 2;
+    const LOG_LEVEL = window.ARIAML_LOG_LEVEL || 1;
 
     const log = (level, ...args) => {
         if (level <= LOG_LEVEL) {

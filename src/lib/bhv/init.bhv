@@ -8,4 +8,7 @@
 	on-attach: log(tablist/tabpanel);
 }
 
-a {on-current-change: log(self);}
+#masthead {
+	rel-list: "a";
+	on-current-change: update-current(page, list@href);
+}
