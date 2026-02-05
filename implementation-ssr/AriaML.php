@@ -115,7 +115,7 @@ class AriaML {
      */
     public static function handle($testClient = false) {
         $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
-        $cache = $_SERVER['HTTP_LIVE_CACHE'] ?? '[]';
+        $cache = $_SERVER['HTTP_NAV_CACHE'] ?? '[]';
         
         $wantsFragment = (strpos($accept, 'aria-ml-fragment') !== false);
         $wantsAriaML = ($testClient || $wantsFragment || strpos($accept, 'text/aria-ml') !== false);
