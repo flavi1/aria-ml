@@ -93,32 +93,25 @@ class AriaML {
         }
     }
 
-	/**
-     * Nettoie les nœuds présents dans le cache client
-     */
-    public function cleanNodeCache($keys) {
+	public function cleanNodeCache($keys) {
         if (empty($keys)) return;
+
+        // On transforme les clés en tableau de recherche simple pour la performance
+        $keysMap = array_flip($keys);
+
+        // On utilise un TreeWalker manuel (plus fiable que XPath sur les fragments)
+        $elements = $this->dom->getElementsByTagName('*');
         
-        $xpath = new DOMXPath($this->dom);
-        
-        foreach ($keys as $key) {
-            // Utilisation de [local-name()='...'] ou de la syntaxe d'attribut universelle
-            // On cherche n'importe quel élément ayant l'attribut nav-cache égal à la clé
-            $escapedKey = htmlspecialchars($key, ENT_QUOTES);
-            $query = "//*[@nav-cache='$escapedKey']";
-            
-            $nodes = $xpath->query($query);
-            
-            foreach ($nodes as $node) {
-                // Log de debug (optionnel) : error_log("Cleaning node: " . $key);
+        foreach ($elements as $node) {
+            if ($node->hasAttribute('nav-cache')) {
+                $nodeKey = $node->getAttribute('nav-cache');
                 
-                // On vide le contenu
-                while ($node->hasChildNodes()) {
-                    $node->removeChild($node->firstChild);
+                if (isset($keysMap[$nodeKey])) {
+                    // Suppression radicale de tout le contenu
+                    $node->nodeValue = ''; 
+                    // On ajoute l'attribut de trace
+                    $node->setAttribute('data-node-cache', 'hit');
                 }
-                
-                // On marque pour le client
-                $node->setAttribute('data-node-cache', 'hit');
             }
         }
     }
