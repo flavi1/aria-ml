@@ -193,6 +193,21 @@ const behaviorCore = (() => {
                 }
             });
         }, true);
+        
+		// 4. Délégation de l'événement sémantique "current-change" (Inspiration Click-out)
+        document.addEventListener('current-change', async (e) => {
+            // On scanne tous les éléments pour trouver ceux qui écoutent cet événement global
+            document.querySelectorAll('*').forEach(el => {
+                if (!el.behavior) return;
+                const props = getResolvedProps(el);
+                const action = props['on-current-change'];
+                if (action) {
+                    isProcessing = true;
+                    behaviorActions.execute(el, 'current-change', action, e);
+                    isProcessing = false;
+                }
+            });
+        }, true);
 
 		// Scan initial
         fullScan();
