@@ -93,18 +93,27 @@ class AriaML {
         }
     }
 
-    /**
+	/**
      * Nettoie les nœuds présents dans le cache client
      */
     public function cleanNodeCache($keys) {
-        if (empty($keys)) return;
+        if (empty($keys) || !$this->ariaNode) return;
+        
         $xpath = new DOMXPath($this->dom);
         foreach ($keys as $key) {
-            $nodes = $xpath->query(".//*[@nav-cache='" . htmlspecialchars($key) . "']", $this->ariaNode);
+            // On cherche l'attribut nav-cache sur le noeud lui-même OU ses descendants
+            // self::* cible le noeud actuel s'il correspond, .//* cible les descendants
+            $query = "self::*[@nav-cache='{K}'] | .//*[@nav-cache='{K}']";
+            $query = str_replace('{K}', htmlspecialchars($key, ENT_QUOTES), $query);
+            
+            $nodes = $xpath->query($query, $this->ariaNode);
+            
             foreach ($nodes as $node) {
+                // Vider le contenu
                 while ($node->hasChildNodes()) {
                     $node->removeChild($node->firstChild);
                 }
+                // Marquer pour le debug client et forcer la présence de l'attribut
                 $node->setAttribute('data-node-cache', 'hit');
             }
         }
