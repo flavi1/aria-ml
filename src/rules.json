@@ -16,5 +16,23 @@
             "urlFilter": "*",
             "resourceTypes": ["main_frame", "sub_frame"]
         }
+    },
+    {
+        "id": 2,
+        "priority": 1,
+        "action": {
+            "type": "modifyHeaders",
+            "responseHeaders": [
+                {
+                    "header": "Content-Type",
+                    "operation": "set",
+                    "value": "text/behavior"
+                }
+            ]
+        },
+        "condition": {
+            "urlFilter": "*.bhv",
+            "resourceTypes": ["xmlhttprequest", "other"]
+        }
     }
 ]
