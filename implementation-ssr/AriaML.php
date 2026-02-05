@@ -135,7 +135,10 @@ class AriaML {
      */
     public static function handle($testClient = false) {
         $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
-        $cache = $_SERVER['HTTP_NAV_CACHE'] ?? '[]';
+		$cache = $_SERVER['HTTP_NAV_CACHE'] ?? $_SERVER['Nav-Cache'] ?? '[]';
+header('X-Debug-Cache-Keys: ' . $cache);
+		$knownKeys = json_decode(stripslashes($cache), true); 
+		if (!is_array($knownKeys)) $knownKeys = [];
         
         $wantsFragment = (strpos($accept, 'aria-ml-fragment') !== false);
         $wantsAriaML = ($testClient || $wantsFragment || strpos($accept, 'text/aria-ml') !== false);
