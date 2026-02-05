@@ -1,5 +1,6 @@
 /**
  * AriaMLNavigation - Orchestrateur de navigation SPA AriaML.
+ * Version 1.4.2 - Gestion de réconciliation récursive et transplantation de fragments.
  */
 class AriaMLNavigation {
     static instance = null;
@@ -113,7 +114,7 @@ class AriaMLNavigation {
 
         try {
             const internal = this.isInternal(url);
-            const cacheKeys = window.NodeCache ? NodeCache.getValidKeys() : [];
+            const cacheKeys = window.NodeCache ? window.NodeCache.getValidKeys() : [];
 
             const headers = {
                 'Accept': 'text/aria-ml-fragment, application/aria-xml-fragment, text/aria-ml, application/aria-xml, text/html, application/xhtml+xml',
@@ -155,6 +156,30 @@ class AriaMLNavigation {
         }
     }
 
+    /**
+     * RECONCILIATION : Parcourt l'arbre source (serveur) et restaure le contenu
+     * vivant depuis le cache si une clé nav-cache correspond.
+     */
+    reconcile(el) {
+        if (el.nodeType !== 1) return;
+
+        if (el.hasAttribute('nav-cache')) {
+            const key = el.getAttribute('nav-cache');
+            const fragment = window.NodeCache?.registry?.get(key);
+            
+            if (fragment && fragment.hasChildNodes()) {
+                // On vide le placeholder du serveur et on injecte le fragment vivant
+                el.innerHTML = '';
+                el.appendChild(fragment);
+                // On ne descend pas plus bas car le fragment contient déjà ses propres enfants réconciliés
+                return;
+            }
+        }
+
+        // Sinon on continue la descente récursive sur les enfants directs
+        Array.from(el.children).forEach(child => this.reconcile(child));
+    }
+
     async applyDOMUpdate(doc, url, pushState) {
         const currentRoot = document.querySelector('aria-ml');
         const incomingRoot = doc.querySelector('aria-ml, aria-ml-fragment');
@@ -166,9 +191,11 @@ class AriaMLNavigation {
             return;
         }
 
-        // --- PHASE 1 : CAPTURE DU CONTENU ACTUEL ---
-        // Avant de vider quoi que ce soit, on déplace les enfants vivants vers le cache
-        document.querySelectorAll('[nav-cache]').forEach(el => NodeCache.capture(el));
+        // --- PHASE 1 : CAPTURE DU VIVANT ---
+        // On aspire les enfants de tous les éléments nav-cache actuels vers le cache (NodeCache)
+        if (window.NodeCache) {
+            window.NodeCache.captureAll(currentRoot);
+        }
 
         const isFullReplacement = incomingRoot.tagName.toLowerCase() === 'aria-ml';
         const targetSlots = [];
@@ -195,38 +222,20 @@ class AriaMLNavigation {
                 const targetEl = isFullReplacement ? currentRoot : currentRoot.querySelector(`[nav-slot="${slotName}"]`);
 
                 if (targetEl) {
-                    // On vide le conteneur (les nœuds vivants sont déjà en sécurité dans NodeCache)
+                    // On vide le conteneur cible (ses enfants sont déjà dans le cache)
                     targetEl.innerHTML = '';
 
-                    // CAS A : Le slot lui-même a un nav-cache
-                    const key = sourceEl.getAttribute('nav-cache');
-                    const cachedFragment = key ? window.NodeCache?.registry?.get(key) : null;
+                    // RECONCILIATION DU SOURCE : On injecte le vivant dans l'élément venant du serveur
+                    this.reconcile(sourceEl);
 
-                    if (cachedFragment instanceof DocumentFragment && cachedFragment.hasChildNodes()) {
-                        // RESTAURATION : On ré-injecte les nœuds vivants du fragment
-                        targetEl.appendChild(cachedFragment);
-                    } else {
-                        // CAS B : On transplante les nouveaux nœuds du serveur
-                        while (sourceEl.firstChild) {
-                            const child = sourceEl.firstChild;
-                            
-                            // Récursivité pour les sous-éléments cachés
-                            if (child.nodeType === 1 && child.hasAttribute('nav-cache')) {
-                                const subKey = child.getAttribute('nav-cache');
-                                const subFragment = window.NodeCache?.registry?.get(subKey);
-                                if (subFragment instanceof DocumentFragment && subFragment.hasChildNodes()) {
-                                    document.adoptNode(child);
-                                    child.appendChild(subFragment);
-                                    targetEl.appendChild(child);
-                                    continue;
-                                }
-                            }
-                            document.adoptNode(child);
-                            targetEl.appendChild(child);
-                        }
+                    // TRANSPLANTATION FINALE
+                    while (sourceEl.firstChild) {
+                        const child = sourceEl.firstChild;
+                        document.adoptNode(child);
+                        targetEl.appendChild(child);
                     }
 
-                    // On synchronise les attributs du slot (pour les classes ou la nouvelle clé de cache)
+                    // Synchronisation des métadonnées (attributs)
                     Array.from(sourceEl.attributes).forEach(a => targetEl.setAttribute(a.name, a.value));
                 }
             });
