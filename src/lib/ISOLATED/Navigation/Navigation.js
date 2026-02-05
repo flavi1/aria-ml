@@ -7,15 +7,11 @@ class AriaMLNavigation {
     constructor(config) {
         if (AriaMLNavigation.instance) return AriaMLNavigation.instance;
         
-        // On s'assure d'extraire l'origine pour les comparaisons de sécurité
         this.baseUrl = new URL(config.navigationBaseUrl, window.location.origin).origin;
         AriaMLNavigation.instance = this;
         this.initEventListeners();
     }
 
-    /**
-     * Vérifie si une URL appartient au périmètre de confiance AriaML.
-     */
     isInternal(url) {
         try {
             const target = new URL(url, window.location.origin);
@@ -26,7 +22,6 @@ class AriaMLNavigation {
     }
 
     initEventListeners() {
-        // Interception des clics (a)
         document.addEventListener('click', e => {
             const link = e.target.closest('a');
             if (link && this.shouldIntercept(link)) {
@@ -38,19 +33,16 @@ class AriaMLNavigation {
             }
         });
 
-        // Interception des formulaires (form)
         document.addEventListener('submit', e => {
             const form = e.target;
             const action = form.getAttribute('action') || window.location.href;
             
-            // On n'intercepte que si l'action est interne
             if (this.isInternal(action)) {
                 e.preventDefault();
                 this.handleFormSubmit(form, e.submitter);
             }
         });
 
-        // Gestion du bouton retour/suivant du navigateur
         window.addEventListener('popstate', () => this.navigate(window.location.href, false));
     }
 
@@ -77,14 +69,10 @@ class AriaMLNavigation {
         }
     }
 
-    /**
-     * Gère les navigations vers _self, _blank etc. pour les verbes étendus ou JSON.
-     */
     async executeClassicNavigation(url, options) {
         const internal = this.isInternal(url);
         const isStandard = (options.method === 'GET' || options.method === 'POST') && options.enctype !== 'application/json';
         
-        // Si standard et _blank, on laisse le comportement natif
         if (isStandard && options.target === '_blank') {
             const f = document.createElement('form');
             f.method = options.method; f.action = url; f.target = '_blank';
@@ -97,11 +85,9 @@ class AriaMLNavigation {
             return;
         }
 
-        // Pour les verbes étendus ou JSON, on construit la soumission
         const sf = document.createElement('form');
         sf.method = 'POST'; sf.action = url; sf.target = options.target;
 
-        // RESTRICTION : Verbes étendus & CSRF uniquement si interne
         if (internal) {
             if (['PUT', 'PATCH', 'DELETE'].includes(options.method)) {
                 const m = document.createElement('input'); m.type='hidden'; m.name='_method'; m.value=options.method; sf.appendChild(m);
@@ -125,9 +111,6 @@ class AriaMLNavigation {
         document.body.appendChild(sf); sf.submit(); document.body.removeChild(sf);
     }
 
-    /**
-     * Cœur de la navigation SPA (fetch + DOM Update).
-     */
     async navigate(url, pushState = true, customOptions = {}) {
         document.documentElement.setAttribute('aria-busy', 'true');
         document.documentElement.setAttribute('inert', '');
@@ -141,7 +124,6 @@ class AriaMLNavigation {
                 ...(customOptions.headers || {})
             };
 
-            // RESTRICTION : NodeCache & CSRF uniquement si interne
             if (internal) {
                 headers['nav-cache'] = JSON.stringify(cacheKeys);
                 const csrf = window.PageProperties?.['csrf-token'];
@@ -178,36 +160,17 @@ class AriaMLNavigation {
         }
     }
 
-    restoreFromCache(incomingDoc) {
-        if (typeof NodeCache === 'undefined' || !NodeCache.registry) return;
-        
-        incomingDoc.querySelectorAll('[nav-cache]').forEach(incomingEl => {
-            const key = incomingEl.getAttribute('nav-cache');
-            const savedNode = NodeCache.registry.get(key);
-
-            if (savedNode) {
-console.log(savedNode)	// Trouvé
-                if (incomingEl.tagName.toLowerCase() === 'aria-ml-fragment') {
-                    incomingEl.innerHTML = '';
-                    while (savedNode.firstChild) incomingEl.appendChild(savedNode.firstChild);
-                } else {
-                    incomingEl.replaceWith(savedNode);
-                }
-            }
-        });
-    }
-
     async applyDOMUpdate(doc, url, pushState) {
         const currentRoot = document.querySelector('aria-ml');
         const incomingRoot = doc.querySelector('aria-ml, aria-ml-fragment');
         const useTransition = document.startViewTransition && 
                               !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         
-		if (!currentRoot || !incomingRoot || currentRoot.getAttribute('nav-base-url') != incomingRoot.getAttribute('nav-base-url')) {
-			console.warn('Redirection native...');
-			window.location.href = url;
-			return;
-		}
+        if (!currentRoot || !incomingRoot || currentRoot.getAttribute('nav-base-url') != incomingRoot.getAttribute('nav-base-url')) {
+            console.warn('Redirection native...');
+            window.location.href = url;
+            return;
+        }
 
         const isFullReplacement = incomingRoot.tagName.toLowerCase() === 'aria-ml';
         const targetSlots = [];
@@ -215,10 +178,6 @@ console.log(savedNode)	// Trouvé
         if (isFullReplacement) {
             targetSlots.push(currentRoot);
         } else {
-            this.restoreFromCache(doc);
-            document.documentElement.removeAttribute('aria-busy');
-            document.documentElement.removeAttribute('inert');
-
             doc.querySelectorAll('[nav-slot]').forEach(newSlot => {
                 const slotName = newSlot.getAttribute('nav-slot');
                 const target = currentRoot.querySelector(`[nav-slot="${slotName}"]`);
@@ -230,67 +189,59 @@ console.log(savedNode)	// Trouvé
             });
         }
 
-	const performUpdate = () => {
-        const slotsToUpdate = incomingRoot.tagName.toLowerCase() === 'aria-ml' 
-            ? [incomingRoot] // Cas remplacement total
-            : doc.querySelectorAll('[nav-slot]');
+        const performUpdate = () => {
+            const fragmentsToProcess = isFullReplacement ? [incomingRoot] : doc.querySelectorAll('[nav-slot]');
 
-        slotsToUpdate.forEach(newSlot => {
-            const slotName = newSlot.getAttribute('nav-slot');
-            const target = slotName 
-                ? currentRoot.querySelector(`[nav-slot="${slotName}"]`) 
-                : currentRoot;
+            fragmentsToProcess.forEach(sourceEl => {
+                const slotName = sourceEl.getAttribute('nav-slot');
+                const targetEl = isFullReplacement ? currentRoot : currentRoot.querySelector(`[nav-slot="${slotName}"]`);
 
-            if (target) {
-                // 1. On vide la cible sans toucher au cache (innerHTML = '' est safe ici)
-                target.innerHTML = ''; 
+                if (targetEl) {
+                    // 1. On vide proprement la cible
+                    targetEl.innerHTML = '';
 
-                // 2. On déplace les nouveaux enfants du doc virtuel vers le doc réel
-                while (newSlot.firstChild) {
-                    const child = newSlot.firstChild;
-                    
-                    // On vérifie si ce nœud est un placeholder pour un élément en cache
-                    if (child.nodeType === 1 && child.hasAttribute('nav-cache')) {
-                        const key = child.getAttribute('nav-cache');
-                        const liveNode = NodeCache.registry.get(key);
+                    // 2. Transplantation enfant par enfant
+                    while (sourceEl.firstChild) {
+                        const child = sourceEl.firstChild;
+                        
+                        // Si c'est un placeholder de cache, on transplante le nœud VIVANT
+                        if (child.nodeType === 1 && child.hasAttribute('nav-cache')) {
+                            const key = child.getAttribute('nav-cache');
+                            const liveNode = window.NodeCache?.registry?.get(key);
 
-                        if (liveNode) {
-                            // TRANSPLANTATION : On injecte le nœud vivant du cache
-                            // On utilise adoptNode pour changer proprement son ownerDocument
-                            document.adoptNode(liveNode); 
-                            target.appendChild(liveNode);
-                            newSlot.removeChild(child); // On vire le placeholder vide
-                            continue;
+                            if (liveNode) {
+                                document.adoptNode(liveNode);
+                                targetEl.appendChild(liveNode);
+                                sourceEl.removeChild(child);
+                                continue;
+                            }
                         }
+
+                        // Sinon, on adopte le nouveau nœud
+                        document.adoptNode(child);
+                        targetEl.appendChild(child);
                     }
-                    
-                    // Sinon, c'est un nouveau nœud (envoyé par le serveur)
-                    document.adoptNode(child);
-                    target.appendChild(child);
+
+                    // 3. Mise à jour des attributs du container
+                    Array.from(sourceEl.attributes).forEach(a => targetEl.setAttribute(a.name, a.value));
                 }
+            });
 
-                // 3. Transfert des attributs du slot (classes, etc.)
-                Array.from(newSlot.attributes).forEach(a => target.setAttribute(a.name, a.value));
-            }
-        });
-
-        if (pushState) history.pushState(null, '', url);
-    };
+            if (pushState) history.pushState(null, '', url);
+            window.scrollTo(0, 0);
+        };
 
         if (useTransition) {
             const transition = document.startViewTransition(() => performUpdate());
             await transition.finished;
-            targetSlots.forEach(el => {
-                el.removeAttribute('aria-busy');
-                el.removeAttribute('inert');
-            });
         } else {
             performUpdate();
-            targetSlots.forEach(el => {
-                el.removeAttribute('aria-busy');
-                el.removeAttribute('inert');
-            });
         }
+
+        targetSlots.forEach(el => {
+            el.removeAttribute('aria-busy');
+            el.removeAttribute('inert');
+        });
 
         document.documentElement.removeAttribute('aria-busy');
         document.documentElement.removeAttribute('inert');
@@ -311,8 +262,6 @@ console.log(savedNode)	// Trouvé
 }
 
 // Initialisation
-
-const navigationBaseUrl = document.querySelector('aria-ml').getAttribute('nav-base-url');
-
+const navigationBaseUrl = document.querySelector('aria-ml')?.getAttribute('nav-base-url');
 if(navigationBaseUrl)
-	window.NavigationManager = new AriaMLNavigation({navigationBaseUrl});
+    window.NavigationManager = new AriaMLNavigation({navigationBaseUrl});
