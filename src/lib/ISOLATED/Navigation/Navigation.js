@@ -222,14 +222,16 @@ class AriaMLNavigation {
             el.removeAttribute('inert');
         });
 
-        const manageFocus = (container) => {
+		const manageFocus = (container) => {
             const auto = container.querySelector('[autofocus]');
-            if (auto) {
-                auto.focus({ preventScroll: false });
-            } else {
-                if (!container.hasAttribute('tabindex')) container.setAttribute('tabindex', '-1');
-                container.focus({ preventScroll: false });
-            }
+            const target = auto || container;
+
+            if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+            
+            // On scroll d'abord pour le cadrage, puis on focus.
+            // Le navigateur utilisera scroll-behavior défini en CSS.
+            target.scrollIntoView({ block: 'start' });
+            target.focus({ preventScroll: true }); 
         };
 
         if (targetSlots.length > 0) manageFocus(targetSlots[0]);
