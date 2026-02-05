@@ -96,38 +96,31 @@ class AriaML {
 	/**
      * Nettoie les nœuds présents dans le cache client
      */
-/**
-     * Nettoie les nœuds présents dans le cache client
-     */
     public function cleanNodeCache($keys) {
-        if (empty($keys) || !$this->ariaNode) return;
-
-        // On définit une fonction récursive simple pour éviter les bugs XPath sur les fragments
-        $cleaner = function($node) use ($keys, &$cleaner) {
-            if ($node instanceof DOMElement) {
-                $cacheKey = $node->getAttribute('nav-cache');
+        if (empty($keys)) return;
+        
+        $xpath = new DOMXPath($this->dom);
+        
+        foreach ($keys as $key) {
+            // Utilisation de [local-name()='...'] ou de la syntaxe d'attribut universelle
+            // On cherche n'importe quel élément ayant l'attribut nav-cache égal à la clé
+            $escapedKey = htmlspecialchars($key, ENT_QUOTES);
+            $query = "//*[@nav-cache='$escapedKey']";
+            
+            $nodes = $xpath->query($query);
+            
+            foreach ($nodes as $node) {
+                // Log de debug (optionnel) : error_log("Cleaning node: " . $key);
                 
-                if ($cacheKey && in_array($cacheKey, $keys)) {
-                    // Vider le contenu
-                    while ($node->hasChildNodes()) {
-                        $node->removeChild($node->firstChild);
-                    }
-                    // Marquer le hit
-                    $node->setAttribute('data-node-cache', 'hit');
-                    // On ne descend pas plus bas si le parent est déjà caché
-                    return;
+                // On vide le contenu
+                while ($node->hasChildNodes()) {
+                    $node->removeChild($node->firstChild);
                 }
+                
+                // On marque pour le client
+                $node->setAttribute('data-node-cache', 'hit');
             }
-
-            // Continuer sur les enfants
-            if ($node->hasChildNodes()) {
-                $children = [];
-                foreach ($node->childNodes as $child) $children[] = $child;
-                foreach ($children as $child) $cleaner($child);
-            }
-        };
-
-        $cleaner($this->ariaNode);
+        }
     }
 
 	/**
