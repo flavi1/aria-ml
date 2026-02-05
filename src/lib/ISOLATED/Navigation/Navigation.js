@@ -189,7 +189,7 @@ class AriaMLNavigation {
             });
         }
 
-        const performUpdate = () => {
+	const performUpdate = () => {
             const fragmentsToProcess = isFullReplacement ? [incomingRoot] : doc.querySelectorAll('[nav-slot]');
 
             fragmentsToProcess.forEach(sourceEl => {
@@ -197,14 +197,28 @@ class AriaMLNavigation {
                 const targetEl = isFullReplacement ? currentRoot : currentRoot.querySelector(`[nav-slot="${slotName}"]`);
 
                 if (targetEl) {
-                    // 1. On vide proprement la cible
+                    // CAS SPÉCIFIQUE : Le slot lui-même est dans le cache
+                    if (sourceEl.hasAttribute('nav-cache')) {
+                        const key = sourceEl.getAttribute('nav-cache');
+                        const liveNode = window.NodeCache?.registry?.get(key);
+
+                        if (liveNode) {
+                            // Si le slot du cache est différent de l'actuel, on remplace
+                            if (liveNode !== targetEl) {
+                                targetEl.replaceWith(liveNode);
+                            }
+                            // Mise à jour des attributs du slot depuis le serveur (fraîcheur des métadonnées)
+                            Array.from(sourceEl.attributes).forEach(a => liveNode.setAttribute(a.name, a.value));
+                            return; // On passe au fragment suivant
+                        }
+                    }
+
+                    // CAS STANDARD : On vide et on transplante les enfants
                     targetEl.innerHTML = '';
 
-                    // 2. Transplantation enfant par enfant
                     while (sourceEl.firstChild) {
                         const child = sourceEl.firstChild;
                         
-                        // Si c'est un placeholder de cache, on transplante le nœud VIVANT
                         if (child.nodeType === 1 && child.hasAttribute('nav-cache')) {
                             const key = child.getAttribute('nav-cache');
                             const liveNode = window.NodeCache?.registry?.get(key);
@@ -217,12 +231,10 @@ class AriaMLNavigation {
                             }
                         }
 
-                        // Sinon, on adopte le nouveau nœud
                         document.adoptNode(child);
                         targetEl.appendChild(child);
                     }
 
-                    // 3. Mise à jour des attributs du container
                     Array.from(sourceEl.attributes).forEach(a => targetEl.setAttribute(a.name, a.value));
                 }
             });
