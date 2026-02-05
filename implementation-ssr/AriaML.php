@@ -167,7 +167,7 @@ class AriaML {
             // Extraction du HTML final
             $output = $testClient ? $buffer : $aria->dom->saveHTML($aria->ariaNode);
             
-            $output .= '<!-- OK? -->'
+            $output .= '<!-- OK? -->';
             
             // Nettoyage propre
             $output = preg_replace('/^<\?xml[^?]*\?>/i', '', trim($output));
