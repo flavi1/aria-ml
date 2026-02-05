@@ -6,5 +6,6 @@
 	on-click: behavior() log(tablist/tabpanel);
 	on-init: log(tablist/tabpanel);
 	on-attach: log(tablist/tabpanel);
-	on-current-change: log(self)
 }
+
+a {on-current-change: log(self);}
