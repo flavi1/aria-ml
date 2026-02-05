@@ -122,7 +122,7 @@ class AriaML {
     public static function handle($testClient = false) {
         $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
 		$cache = $_SERVER['HTTP_NAV_CACHE'] ?? $_SERVER['Nav-Cache'] ?? '[]';
-header('X-Debug-Cache-Keys: ' . $cache);
+header('X-Debug-testClient-Keys: ' . var_export(testClient, true));
 		$knownKeys = json_decode(stripslashes($cache), true); 
 		if (!is_array($knownKeys)) $knownKeys = [];
         
