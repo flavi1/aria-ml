@@ -1,77 +1,34 @@
 /**
- * NodeCache - Gestionnaire de persistance de nœuds DOM AriaML.
+ * NodeCache - Gestionnaire de fragments vivants.
  */
 const NodeCache = (() => {
     const registry = new Map();
 
-    /**
-     * Assure l'existence d'un fragment pour une clé et y déplace les enfants.
-     */
+    // Capture les enfants d'un élément dans son fragment dédié
     const capture = (el) => {
         const key = el.getAttribute('nav-cache');
         if (!key) return;
-
-        let fragment = registry.get(key);
-        if (!(fragment instanceof DocumentFragment)) {
-            fragment = document.createDocumentFragment();
-            registry.set(key, fragment);
-        }
-
-        // On transplante les enfants réels vers le fragment de stockage
-        //appendChild déplace le nœud, il ne le clone pas.
+        
+        if (!registry.has(key)) registry.set(key, document.createDocumentFragment());
+        const fragment = registry.get(key);
+        
         while (el.firstChild) {
             fragment.appendChild(el.firstChild);
         }
     };
 
-    /**
-     * Enregistre un élément. Si c'est un nouvel élément avec nav-cache, 
-     * on prépare son fragment dans le registre.
-     */
-    const register = (el) => {
-        if (el.nodeType !== 1) return;
-
-        const elements = el.hasAttribute('nav-cache') 
-            ? [el, ...el.querySelectorAll('[nav-cache]')]
-            : el.querySelectorAll('[nav-cache]');
-
-        elements.forEach(node => {
-            const key = node.getAttribute('nav-cache');
-            if (key && !registry.has(key)) {
-                // Initialise un fragment vide pour cette clé
-                registry.set(key, document.createDocumentFragment());
-            }
-        });
+    // Capture récursivement tous les éléments porteurs de nav-cache dans un conteneur
+    const captureAll = (container) => {
+        const elements = container.querySelectorAll('[nav-cache]');
+        // On capture du plus profond au plus haut pour préserver la structure
+        Array.from(elements).reverse().forEach(el => capture(el));
+        // Si le container lui-même a un cache
+        if (container.hasAttribute('nav-cache')) capture(container);
     };
 
-    const getValidKeys = () => {
-        // Une clé est valide si elle est dans le Map
-        return Array.from(registry.keys());
-    };
+    const getValidKeys = () => Array.from(registry.keys());
 
-    const observer = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            mutation.addedNodes.forEach(node => register(node));
-        }
-    });
-
-    observer.observe(document.documentElement, { 
-        childList: true, 
-        subtree: true 
-    });
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => register(document.documentElement));
-    } else {
-        register(document.documentElement);
-    }
-
-    return {
-        registry,
-        getValidKeys,
-        capture,
-        register
-    };
+    return { registry, capture, captureAll, getValidKeys };
 })();
 
 window.NodeCache = NodeCache;
