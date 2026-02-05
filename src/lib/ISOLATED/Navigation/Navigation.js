@@ -1,6 +1,6 @@
 /**
  * AriaMLNavigation - Orchestrateur de navigation SPA AriaML.
- * Version 1.4.2 - Gestion de réconciliation récursive et transplantation de fragments.
+ * Version 1.4.3 - Réconciliation récursive profonde (Deep Restoration).
  */
 class AriaMLNavigation {
     static instance = null;
@@ -69,20 +69,6 @@ class AriaMLNavigation {
 
     async executeClassicNavigation(url, options) {
         const internal = this.isInternal(url);
-        const isStandard = (options.method === 'GET' || options.method === 'POST') && options.enctype !== 'application/json';
-        
-        if (isStandard && options.target === '_blank') {
-            const f = document.createElement('form');
-            f.method = options.method; f.action = url; f.target = '_blank';
-            if (options.method === 'POST' && options.body instanceof FormData) {
-                for (const [k, v] of options.body.entries()) {
-                    const i = document.createElement('input'); i.type='hidden'; i.name=k; i.value=v; f.appendChild(i);
-                }
-            }
-            document.body.appendChild(f); f.submit(); document.body.removeChild(f);
-            return;
-        }
-
         const sf = document.createElement('form');
         sf.method = 'POST'; sf.action = url; sf.target = options.target;
 
@@ -135,30 +121,28 @@ class AriaMLNavigation {
             };
 
             const response = await fetch(url, fetchOptions);
-            const finalUrl = response.url || url;
-
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
             const text = await response.text();
-            const contentType = response.headers.get('Content-Type') || 'text/html';
-            const mimeType = contentType.includes('xml') ? 'application/xhtml+xml' : 'text/html';
-            const doc = new DOMParser().parseFromString(text, mimeType);
+            const doc = new DOMParser().parseFromString(text, 'text/html');
 
-            await this.applyDOMUpdate(doc, finalUrl, pushState);
+            await this.applyDOMUpdate(doc, response.url || url, pushState);
 
         } catch (error) {
             console.warn('AriaML Navigation Fallback:', error.message);
-            document.documentElement.removeAttribute('aria-busy');
-            document.documentElement.removeAttribute('inert');
             if (pushState && (!customOptions.method || customOptions.method === 'GET')) {
                 window.location.href = url;
             }
+        } finally {
+            document.documentElement.removeAttribute('aria-busy');
+            document.documentElement.removeAttribute('inert');
         }
     }
 
     /**
-     * RECONCILIATION : Parcourt l'arbre source (serveur) et restaure le contenu
-     * vivant depuis le cache si une clé nav-cache correspond.
+     * RECONCILIATION RÉCURSIVE : Restaure le vivant depuis le cache.
+     * Note : On ne "return" pas après un match pour permettre de restaurer 
+     * des éléments mis en cache à l'intérieur d'autres éléments mis en cache.
      */
     reconcile(el) {
         if (el.nodeType !== 1) return;
@@ -168,15 +152,12 @@ class AriaMLNavigation {
             const fragment = window.NodeCache?.registry?.get(key);
             
             if (fragment && fragment.hasChildNodes()) {
-                // On vide le placeholder du serveur et on injecte le fragment vivant
                 el.innerHTML = '';
                 el.appendChild(fragment);
-                // On ne descend pas plus bas car le fragment contient déjà ses propres enfants réconciliés
-                return;
+                // On continue l'exploration des enfants du fragment qu'on vient d'injecter
             }
         }
 
-        // Sinon on continue la descente récursive sur les enfants directs
         Array.from(el.children).forEach(child => this.reconcile(child));
     }
 
@@ -191,11 +172,8 @@ class AriaMLNavigation {
             return;
         }
 
-        // --- PHASE 1 : CAPTURE DU VIVANT ---
-        // On aspire les enfants de tous les éléments nav-cache actuels vers le cache (NodeCache)
-        if (window.NodeCache) {
-            window.NodeCache.captureAll(currentRoot);
-        }
+        // Capture du vivant actuel avant modification (Deep-to-Shallow via NodeCache.captureAll)
+        if (window.NodeCache) window.NodeCache.captureAll(currentRoot);
 
         const isFullReplacement = incomingRoot.tagName.toLowerCase() === 'aria-ml';
         const targetSlots = [];
@@ -204,8 +182,7 @@ class AriaMLNavigation {
             targetSlots.push(currentRoot);
         } else {
             doc.querySelectorAll('[nav-slot]').forEach(newSlot => {
-                const slotName = newSlot.getAttribute('nav-slot');
-                const target = currentRoot.querySelector(`[nav-slot="${slotName}"]`);
+                const target = currentRoot.querySelector(`[nav-slot="${newSlot.getAttribute('nav-slot')}"]`);
                 if (target) {
                     target.setAttribute('aria-busy', 'true');
                     target.setAttribute('inert', ''); 
@@ -218,24 +195,18 @@ class AriaMLNavigation {
             const fragmentsToProcess = isFullReplacement ? [incomingRoot] : doc.querySelectorAll('[nav-slot]');
 
             fragmentsToProcess.forEach(sourceEl => {
-                const slotName = sourceEl.getAttribute('nav-slot');
-                const targetEl = isFullReplacement ? currentRoot : currentRoot.querySelector(`[nav-slot="${slotName}"]`);
+                const targetEl = isFullReplacement ? currentRoot : currentRoot.querySelector(`[nav-slot="${sourceEl.getAttribute('nav-slot')}"]`);
 
                 if (targetEl) {
-                    // On vide le conteneur cible (ses enfants sont déjà dans le cache)
                     targetEl.innerHTML = '';
-
-                    // RECONCILIATION DU SOURCE : On injecte le vivant dans l'élément venant du serveur
                     this.reconcile(sourceEl);
 
-                    // TRANSPLANTATION FINALE
                     while (sourceEl.firstChild) {
                         const child = sourceEl.firstChild;
                         document.adoptNode(child);
                         targetEl.appendChild(child);
                     }
 
-                    // Synchronisation des métadonnées (attributs)
                     Array.from(sourceEl.attributes).forEach(a => targetEl.setAttribute(a.name, a.value));
                 }
             });
@@ -244,26 +215,18 @@ class AriaMLNavigation {
             window.scrollTo(0, 0);
         };
 
-        if (useTransition) {
-            const transition = document.startViewTransition(() => performUpdate());
-            await transition.finished;
-        } else {
-            performUpdate();
-        }
+        if (useTransition) await document.startViewTransition(() => performUpdate()).finished;
+        else performUpdate();
 
         targetSlots.forEach(el => {
             el.removeAttribute('aria-busy');
             el.removeAttribute('inert');
         });
 
-        document.documentElement.removeAttribute('aria-busy');
-        document.documentElement.removeAttribute('inert');
-
         const manageFocus = (container) => {
             const auto = container.querySelector('[autofocus]');
-            if (auto) {
-                auto.focus();
-            } else {
+            if (auto) auto.focus();
+            else {
                 if (!container.hasAttribute('tabindex')) container.setAttribute('tabindex', '-1');
                 container.focus();
             }
@@ -274,7 +237,5 @@ class AriaMLNavigation {
     }
 }
 
-// Initialisation
 const navigationBaseUrl = document.querySelector('aria-ml')?.getAttribute('nav-base-url');
-if(navigationBaseUrl)
-    window.NavigationManager = new AriaMLNavigation({navigationBaseUrl});
+if(navigationBaseUrl) window.NavigationManager = new AriaMLNavigation({navigationBaseUrl});
