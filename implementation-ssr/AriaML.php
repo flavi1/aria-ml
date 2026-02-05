@@ -126,6 +126,8 @@ class AriaML {
 		$knownKeys = json_decode(stripslashes($cache), true); 
 		if (!is_array($knownKeys)) $knownKeys = [];
         
+header('X-Debug-Keys: ' . var_export(knownKeys, 1));
+        
         $wantsFragment = (strpos($accept, 'aria-ml-fragment') !== false);
         $wantsAriaML = ($testClient || $wantsFragment || strpos($accept, 'text/aria-ml') !== false);
         $knownKeys = json_decode($cache, true) ?? [];
