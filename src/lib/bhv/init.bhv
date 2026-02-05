@@ -6,4 +6,5 @@
 	on-click: behavior() log(tablist/tabpanel);
 	init: log(tablist/tabpanel);
 	on-attach: log(tablist/tabpanel);
+	on-current-change: log(@role)
 }

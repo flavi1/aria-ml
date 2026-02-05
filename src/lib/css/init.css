@@ -20,11 +20,13 @@ aria-ml { display: block; min-height: 100%; padding: 8px; box-sizing: border-box
 }
 
 @media (prefers-reduced-motion: reduce) {
+
 	*, *::before, *::after {
 		animation: none !important;
 		animation-name: none !important;
 		animation-duration: 0s !important;
 		view-transition-name: unset !important;
+		scroll-behavior: auto !important;
 	}
 	/* TODO : pas de transition ni d'animation dans ce cas: Respect des préférences utilisateurs. */
 }
@@ -57,7 +59,3 @@ aria-ml { display: block; min-height: 100%; padding: 8px; box-sizing: border-box
 	white-space: normal;
 	position: unset;
 }
-
-
-
-

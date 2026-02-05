@@ -235,7 +235,16 @@ class AriaMLNavigation {
         };
 
         if (targetSlots.length > 0) manageFocus(targetSlots[0]);
-        document.dispatchEvent(new CustomEvent('ariaml:navigated', { detail: { url } }));
+        
+		// Dispatch de l'événement sémantique
+        document.dispatchEvent(new CustomEvent('current-change', { 
+            detail: {
+                type: 'page',
+                value: url
+            },
+            bubbles: true,
+            cancelable: true
+        }));
     }
 }
 
