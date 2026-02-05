@@ -186,6 +186,7 @@ class AriaMLNavigation {
             const savedNode = NodeCache.registry.get(key);
 
             if (savedNode) {
+console.log(savedNode)	// Trouvé
                 if (incomingEl.tagName.toLowerCase() === 'aria-ml-fragment') {
                     incomingEl.innerHTML = '';
                     while (savedNode.firstChild) incomingEl.appendChild(savedNode.firstChild);
@@ -229,23 +230,52 @@ class AriaMLNavigation {
             });
         }
 
-        const performUpdate = () => {
-            if (isFullReplacement) {
-                currentRoot.innerHTML = incomingRoot.innerHTML;
-                Array.from(incomingRoot.attributes).forEach(a => currentRoot.setAttribute(a.name, a.value));
-            } else {
-                doc.querySelectorAll('[nav-slot]').forEach(newSlot => {
-                    const slotName = newSlot.getAttribute('nav-slot');
-                    const target = currentRoot.querySelector(`[nav-slot="${slotName}"]`);
-                    if (target) {
-                        target.innerHTML = newSlot.innerHTML;
-                        Array.from(newSlot.attributes).forEach(a => target.setAttribute(a.name, a.value));
+	const performUpdate = () => {
+        const slotsToUpdate = incomingRoot.tagName.toLowerCase() === 'aria-ml' 
+            ? [incomingRoot] // Cas remplacement total
+            : doc.querySelectorAll('[nav-slot]');
+
+        slotsToUpdate.forEach(newSlot => {
+            const slotName = newSlot.getAttribute('nav-slot');
+            const target = slotName 
+                ? currentRoot.querySelector(`[nav-slot="${slotName}"]`) 
+                : currentRoot;
+
+            if (target) {
+                // 1. On vide la cible sans toucher au cache (innerHTML = '' est safe ici)
+                target.innerHTML = ''; 
+
+                // 2. On déplace les nouveaux enfants du doc virtuel vers le doc réel
+                while (newSlot.firstChild) {
+                    const child = newSlot.firstChild;
+                    
+                    // On vérifie si ce nœud est un placeholder pour un élément en cache
+                    if (child.nodeType === 1 && child.hasAttribute('nav-cache')) {
+                        const key = child.getAttribute('nav-cache');
+                        const liveNode = NodeCache.registry.get(key);
+
+                        if (liveNode) {
+                            // TRANSPLANTATION : On injecte le nœud vivant du cache
+                            // On utilise adoptNode pour changer proprement son ownerDocument
+                            document.adoptNode(liveNode); 
+                            target.appendChild(liveNode);
+                            newSlot.removeChild(child); // On vire le placeholder vide
+                            continue;
+                        }
                     }
-                });
+                    
+                    // Sinon, c'est un nouveau nœud (envoyé par le serveur)
+                    document.adoptNode(child);
+                    target.appendChild(child);
+                }
+
+                // 3. Transfert des attributs du slot (classes, etc.)
+                Array.from(newSlot.attributes).forEach(a => target.setAttribute(a.name, a.value));
             }
-            if (pushState) history.pushState(null, '', url);
-            window.scrollTo(0, 0);
-        };
+        });
+
+        if (pushState) history.pushState(null, '', url);
+    };
 
         if (useTransition) {
             const transition = document.startViewTransition(() => performUpdate());
