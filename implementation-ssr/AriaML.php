@@ -93,25 +93,40 @@ class AriaML {
         }
     }
 
-	public function cleanNodeCache($keys) {
-        if (empty($keys)) return;
+/**
+     * Nettoie les nœuds présents dans le cache client en agissant 
+     * uniquement sur l'arbre de rendu actuel.
+     */
+    public function cleanNodeCache($keys) {
+        if (empty($keys) || !$this->ariaNode) return;
 
-        // On transforme les clés en tableau de recherche simple pour la performance
         $keysMap = array_flip($keys);
-
-        // On utilise un TreeWalker manuel (plus fiable que XPath sur les fragments)
-        $elements = $this->dom->getElementsByTagName('*');
+        
+        // On cherche les éléments uniquement à l'intérieur de ariaNode
+        // getElementsByTagName sur un DOMElement ne cherche que dans ses descendants
+        $elements = $this->ariaNode->getElementsByTagName('*');
         
         foreach ($elements as $node) {
             if ($node->hasAttribute('nav-cache')) {
-                $nodeKey = $node->getAttribute('nav-cache');
+                $currentKey = $node->getAttribute('nav-cache');
                 
-                if (isset($keysMap[$nodeKey])) {
-                    // Suppression radicale de tout le contenu
+                if (isset($keysMap[$currentKey])) {
+                    // On vide le contenu de manière atomique
                     $node->nodeValue = ''; 
-                    // On ajoute l'attribut de trace
-                    $node->setAttribute('data-node-cache', 'hit');
+                    
+                    // On peut aussi vider les nodes enfants si nodeValue ne suffit pas
+                    while ($node->hasChildNodes()) {
+                        $node->removeChild($node->firstChild);
+                    }
                 }
+            }
+        }
+
+        // Cas particulier : La racine elle-même porte peut-être un nav-cache
+        if ($this->ariaNode->hasAttribute('nav-cache')) {
+            $rootKey = $this->ariaNode->getAttribute('nav-cache');
+            if (isset($keysMap[$rootKey])) {
+                $this->ariaNode->nodeValue = '';
             }
         }
     }
@@ -121,14 +136,10 @@ class AriaML {
      */
     public static function handle($testClient = false) {
         $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
-		$cache = $_SERVER['HTTP_NAV_CACHE'] ?? $_SERVER['Nav-Cache'] ?? '[]';
-
-		$knownKeys = json_decode(stripslashes($cache), true); 
-		if (!is_array($knownKeys)) $knownKeys = [];
         
         $wantsFragment = (strpos($accept, 'aria-ml-fragment') !== false);
         $wantsAriaML = ($testClient || $wantsFragment || strpos($accept, 'text/aria-ml') !== false);
-        $knownKeys = json_decode($cache, true) ?? [];
+
 
         ob_start();
 
@@ -161,6 +172,9 @@ class AriaML {
 
             // Nettoyage du cache si nécessaire
             if ($wantsAriaML) {
+				$cache = $_SERVER['HTTP_NAV_CACHE'] ?? $_SERVER['Nav-Cache'] ?? '[]';
+				$knownKeys = json_decode(stripslashes($cache), true); 
+				if (!is_array($knownKeys)) $knownKeys = [];
                 $aria->cleanNodeCache($knownKeys);
             }
 
@@ -169,9 +183,6 @@ class AriaML {
             
             // Nettoyage propre
             $output = preg_replace('/^<\?xml[^?]*\?>/i', '', trim($output));
-            
-            
-$output .= '<pre>'.var_export($knownKeys, 1).'</pre>';
 
             if ($wantsAriaML) {
                 if ($wantsFragment) {
