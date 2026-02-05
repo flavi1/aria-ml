@@ -5,17 +5,17 @@ const NodeCache = (() => {
     const registry = new Map();
 
     /**
-     * Enregistre un élément et ses enfants porteurs de l'attribut live-cache.
+     * Enregistre un élément et ses enfants porteurs de l'attribut nav-cache.
      */
     const register = (el) => {
         if (el.nodeType !== 1) return;
 
-        const elements = el.hasAttribute('live-cache') 
-            ? [el, ...el.querySelectorAll('[live-cache]')]
-            : el.querySelectorAll('[live-cache]');
+        const elements = el.hasAttribute('nav-cache') 
+            ? [el, ...el.querySelectorAll('[nav-cache]')]
+            : el.querySelectorAll('[nav-cache]');
 
         elements.forEach(node => {
-            const key = node.getAttribute('live-cache');
+            const key = node.getAttribute('nav-cache');
             // On ne stocke que si la clé n'existe pas ENCORE
             // Cela préserve l'instance originale (état, scroll, event listeners)
             if (key && !registry.has(key)) {
@@ -25,7 +25,7 @@ const NodeCache = (() => {
     };
 
     /**
-     * Retourne la liste des clés pour le header HTTP Live-Cache.
+     * Retourne la liste des clés pour le header HTTP nav-cache.
      * Filtre les références qui ne sont plus des HTMLElement valides.
      */
     const getValidKeys = () => {

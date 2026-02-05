@@ -143,7 +143,7 @@ class AriaMLNavigation {
 
             // RESTRICTION : NodeCache & CSRF uniquement si interne
             if (internal) {
-                headers['Live-Cache'] = JSON.stringify(cacheKeys);
+                headers['nav-cache'] = JSON.stringify(cacheKeys);
                 const csrf = window.PageProperties?.['csrf-token'];
                 if (csrf) headers['X-CSRF-TOKEN'] = csrf;
             }
@@ -181,8 +181,8 @@ class AriaMLNavigation {
     restoreFromCache(incomingDoc) {
         if (typeof NodeCache === 'undefined' || !NodeCache.registry) return;
         
-        incomingDoc.querySelectorAll('[live-cache]').forEach(incomingEl => {
-            const key = incomingEl.getAttribute('live-cache');
+        incomingDoc.querySelectorAll('[nav-cache]').forEach(incomingEl => {
+            const key = incomingEl.getAttribute('nav-cache');
             const savedNode = NodeCache.registry.get(key);
 
             if (savedNode) {
@@ -202,12 +202,8 @@ class AriaMLNavigation {
         const useTransition = document.startViewTransition && 
                               !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         
-		if (!currentRoot || !incomingRoot) {
-			console.warn('AriaML: Structure invalide. Redirection native...');
-			
-			// On NE débloque PAS. 
-			// On laisse l'utilisateur dans l'état "chargement" 
-			// pendant que le navigateur fait le saut vers la nouvelle URL.
+		if (!currentRoot || !incomingRoot || currentRoot.getAttribute('nav-base-url') != incomingRoot.getAttribute('nav-base-url')) {
+			console.warn('Redirection native...');
 			window.location.href = url;
 			return;
 		}
@@ -222,9 +218,9 @@ class AriaMLNavigation {
             document.documentElement.removeAttribute('aria-busy');
             document.documentElement.removeAttribute('inert');
 
-            doc.querySelectorAll('[slot]').forEach(newSlot => {
-                const slotName = newSlot.getAttribute('slot');
-                const target = currentRoot.querySelector(`[slot="${slotName}"]`);
+            doc.querySelectorAll('[nav-slot]').forEach(newSlot => {
+                const slotName = newSlot.getAttribute('nav-slot');
+                const target = currentRoot.querySelector(`[nav-slot="${slotName}"]`);
                 if (target) {
                     target.setAttribute('aria-busy', 'true');
                     target.setAttribute('inert', ''); 
@@ -238,9 +234,9 @@ class AriaMLNavigation {
                 currentRoot.innerHTML = incomingRoot.innerHTML;
                 Array.from(incomingRoot.attributes).forEach(a => currentRoot.setAttribute(a.name, a.value));
             } else {
-                doc.querySelectorAll('[slot]').forEach(newSlot => {
-                    const slotName = newSlot.getAttribute('slot');
-                    const target = currentRoot.querySelector(`[slot="${slotName}"]`);
+                doc.querySelectorAll('[nav-slot]').forEach(newSlot => {
+                    const slotName = newSlot.getAttribute('nav-slot');
+                    const target = currentRoot.querySelector(`[nav-slot="${slotName}"]`);
                     if (target) {
                         target.innerHTML = newSlot.innerHTML;
                         Array.from(newSlot.attributes).forEach(a => target.setAttribute(a.name, a.value));
@@ -285,6 +281,8 @@ class AriaMLNavigation {
 }
 
 // Initialisation
-window.NavigationManager = new AriaMLNavigation({ 
-    navigationBaseUrl: document.querySelector('aria-ml').getAttribute('nav-base-url') ?? window.location.origin
-});
+
+const navigationBaseUrl = document.querySelector('aria-ml').getAttribute('nav-base-url');
+
+if(navigationBaseUrl)
+	window.NavigationManager = new AriaMLNavigation({navigationBaseUrl});
