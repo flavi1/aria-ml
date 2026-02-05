@@ -96,27 +96,38 @@ class AriaML {
 	/**
      * Nettoie les nœuds présents dans le cache client
      */
+/**
+     * Nettoie les nœuds présents dans le cache client
+     */
     public function cleanNodeCache($keys) {
         if (empty($keys) || !$this->ariaNode) return;
-        
-        $xpath = new DOMXPath($this->dom);
-        foreach ($keys as $key) {
-            // On cherche l'attribut nav-cache sur le noeud lui-même OU ses descendants
-            // self::* cible le noeud actuel s'il correspond, .//* cible les descendants
-            $query = "self::*[@nav-cache='{K}'] | .//*[@nav-cache='{K}']";
-            $query = str_replace('{K}', htmlspecialchars($key, ENT_QUOTES), $query);
-            
-            $nodes = $xpath->query($query, $this->ariaNode);
-            
-            foreach ($nodes as $node) {
-                // Vider le contenu
-                while ($node->hasChildNodes()) {
-                    $node->removeChild($node->firstChild);
+
+        // On définit une fonction récursive simple pour éviter les bugs XPath sur les fragments
+        $cleaner = function($node) use ($keys, &$cleaner) {
+            if ($node instanceof DOMElement) {
+                $cacheKey = $node->getAttribute('nav-cache');
+                
+                if ($cacheKey && in_array($cacheKey, $keys)) {
+                    // Vider le contenu
+                    while ($node->hasChildNodes()) {
+                        $node->removeChild($node->firstChild);
+                    }
+                    // Marquer le hit
+                    $node->setAttribute('data-node-cache', 'hit');
+                    // On ne descend pas plus bas si le parent est déjà caché
+                    return;
                 }
-                // Marquer pour le debug client et forcer la présence de l'attribut
-                $node->setAttribute('data-node-cache', 'hit');
             }
-        }
+
+            // Continuer sur les enfants
+            if ($node->hasChildNodes()) {
+                $children = [];
+                foreach ($node->childNodes as $child) $children[] = $child;
+                foreach ($children as $child) $cleaner($child);
+            }
+        };
+
+        $cleaner($this->ariaNode);
     }
 
 	/**
@@ -166,8 +177,6 @@ class AriaML {
 
             // Extraction du HTML final
             $output = $testClient ? $buffer : $aria->dom->saveHTML($aria->ariaNode);
-            
-            $output .= '<!-- '.var_export($_SERVER['HTTP_NAV_CACHE'] ?? 'NO', true).' -->';
             
             // Nettoyage propre
             $output = preg_replace('/^<\?xml[^?]*\?>/i', '', trim($output));
