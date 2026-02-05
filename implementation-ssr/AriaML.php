@@ -167,7 +167,7 @@ class AriaML {
             // Extraction du HTML final
             $output = $testClient ? $buffer : $aria->dom->saveHTML($aria->ariaNode);
             
-            $output .= '<!-- '.var_export($_SERVER['HTTP_NAV_CACHE'], true).' -->';
+            $output .= '<!-- '.var_export($_SERVER['HTTP_NAV_CACHE'] ?? 'NO', true).' -->';
             
             // Nettoyage propre
             $output = preg_replace('/^<\?xml[^?]*\?>/i', '', trim($output));
