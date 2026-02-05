@@ -5,7 +5,28 @@ const NodeCache = (() => {
     const registry = new Map();
 
     /**
-     * Enregistre un élément et ses enfants porteurs de l'attribut nav-cache.
+     * Assure l'existence d'un fragment pour une clé et y déplace les enfants.
+     */
+    const capture = (el) => {
+        const key = el.getAttribute('nav-cache');
+        if (!key) return;
+
+        let fragment = registry.get(key);
+        if (!(fragment instanceof DocumentFragment)) {
+            fragment = document.createDocumentFragment();
+            registry.set(key, fragment);
+        }
+
+        // On transplante les enfants réels vers le fragment de stockage
+        //appendChild déplace le nœud, il ne le clone pas.
+        while (el.firstChild) {
+            fragment.appendChild(el.firstChild);
+        }
+    };
+
+    /**
+     * Enregistre un élément. Si c'est un nouvel élément avec nav-cache, 
+     * on prépare son fragment dans le registre.
      */
     const register = (el) => {
         if (el.nodeType !== 1) return;
@@ -16,41 +37,29 @@ const NodeCache = (() => {
 
         elements.forEach(node => {
             const key = node.getAttribute('nav-cache');
-            // On ne stocke que si la clé n'existe pas ENCORE
-            // Cela préserve l'instance originale (état, scroll, event listeners)
             if (key && !registry.has(key)) {
-                registry.set(key, node);
+                // Initialise un fragment vide pour cette clé
+                registry.set(key, document.createDocumentFragment());
             }
         });
     };
 
-    /**
-     * Retourne la liste des clés pour le header HTTP nav-cache.
-     * Filtre les références qui ne sont plus des HTMLElement valides.
-     */
     const getValidKeys = () => {
-        for (const [key, node] of registry) {
-            if (!(node instanceof HTMLElement)) {
-                registry.delete(key);
-            }
-        }
+        // Une clé est valide si elle est dans le Map
         return Array.from(registry.keys());
     };
 
     const observer = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
-            // On observe les ajouts de nœuds pour peupler le cache dynamiquement
             mutation.addedNodes.forEach(node => register(node));
         }
     });
 
-    // L'observation commence immédiatement sur le document
     observer.observe(document.documentElement, { 
         childList: true, 
         subtree: true 
     });
 
-    // Initialisation sur le contenu existant (SSR)
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => register(document.documentElement));
     } else {
@@ -59,7 +68,9 @@ const NodeCache = (() => {
 
     return {
         registry,
-        getValidKeys
+        getValidKeys,
+        capture,
+        register
     };
 })();
 

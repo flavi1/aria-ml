@@ -6,7 +6,6 @@ class AriaMLNavigation {
 
     constructor(config) {
         if (AriaMLNavigation.instance) return AriaMLNavigation.instance;
-        
         this.baseUrl = new URL(config.navigationBaseUrl, window.location.origin).origin;
         AriaMLNavigation.instance = this;
         this.initEventListeners();
@@ -36,7 +35,6 @@ class AriaMLNavigation {
         document.addEventListener('submit', e => {
             const form = e.target;
             const action = form.getAttribute('action') || window.location.href;
-            
             if (this.isInternal(action)) {
                 e.preventDefault();
                 this.handleFormSubmit(form, e.submitter);
@@ -54,7 +52,6 @@ class AriaMLNavigation {
     async handleFormSubmit(form, submitter) {
         const options = await AriaMLForm.prepare(form, submitter);
         const url = new URL(options.action, window.location.origin);
-
         const buttons = form.querySelectorAll('button, input[type="submit"]');
         buttons.forEach(btn => btn.disabled = true);
 
@@ -107,7 +104,6 @@ class AriaMLNavigation {
                 }
             }
         }
-        
         document.body.appendChild(sf); sf.submit(); document.body.removeChild(sf);
     }
 
@@ -153,7 +149,6 @@ class AriaMLNavigation {
             console.warn('AriaML Navigation Fallback:', error.message);
             document.documentElement.removeAttribute('aria-busy');
             document.documentElement.removeAttribute('inert');
-            
             if (pushState && (!customOptions.method || customOptions.method === 'GET')) {
                 window.location.href = url;
             }
@@ -167,10 +162,13 @@ class AriaMLNavigation {
                               !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         
         if (!currentRoot || !incomingRoot || currentRoot.getAttribute('nav-base-url') != incomingRoot.getAttribute('nav-base-url')) {
-            console.warn('Redirection native...');
             window.location.href = url;
             return;
         }
+
+        // --- PHASE 1 : CAPTURE DU CONTENU ACTUEL ---
+        // Avant de vider quoi que ce soit, on déplace les enfants vivants vers le cache
+        document.querySelectorAll('[nav-cache]').forEach(el => NodeCache.capture(el));
 
         const isFullReplacement = incomingRoot.tagName.toLowerCase() === 'aria-ml';
         const targetSlots = [];
@@ -189,7 +187,7 @@ class AriaMLNavigation {
             });
         }
 
-	const performUpdate = () => {
+        const performUpdate = () => {
             const fragmentsToProcess = isFullReplacement ? [incomingRoot] : doc.querySelectorAll('[nav-slot]');
 
             fragmentsToProcess.forEach(sourceEl => {
@@ -197,44 +195,38 @@ class AriaMLNavigation {
                 const targetEl = isFullReplacement ? currentRoot : currentRoot.querySelector(`[nav-slot="${slotName}"]`);
 
                 if (targetEl) {
-                    // CAS SPÉCIFIQUE : Le slot lui-même est dans le cache
-                    if (sourceEl.hasAttribute('nav-cache')) {
-                        const key = sourceEl.getAttribute('nav-cache');
-                        const liveNode = window.NodeCache?.registry?.get(key);
-
-                        if (liveNode) {
-                            // Si le slot du cache est différent de l'actuel, on remplace
-                            if (liveNode !== targetEl) {
-                                targetEl.replaceWith(liveNode);
-                            }
-                            // Mise à jour des attributs du slot depuis le serveur (fraîcheur des métadonnées)
-                            Array.from(sourceEl.attributes).forEach(a => liveNode.setAttribute(a.name, a.value));
-                            return; // On passe au fragment suivant
-                        }
-                    }
-
-                    // CAS STANDARD : On vide et on transplante les enfants
+                    // On vide le conteneur (les nœuds vivants sont déjà en sécurité dans NodeCache)
                     targetEl.innerHTML = '';
 
-                    while (sourceEl.firstChild) {
-                        const child = sourceEl.firstChild;
-                        
-                        if (child.nodeType === 1 && child.hasAttribute('nav-cache')) {
-                            const key = child.getAttribute('nav-cache');
-                            const liveNode = window.NodeCache?.registry?.get(key);
+                    // CAS A : Le slot lui-même a un nav-cache
+                    const key = sourceEl.getAttribute('nav-cache');
+                    const cachedFragment = key ? window.NodeCache?.registry?.get(key) : null;
 
-                            if (liveNode) {
-                                document.adoptNode(liveNode);
-                                targetEl.appendChild(liveNode);
-                                sourceEl.removeChild(child);
-                                continue;
+                    if (cachedFragment instanceof DocumentFragment && cachedFragment.hasChildNodes()) {
+                        // RESTAURATION : On ré-injecte les nœuds vivants du fragment
+                        targetEl.appendChild(cachedFragment);
+                    } else {
+                        // CAS B : On transplante les nouveaux nœuds du serveur
+                        while (sourceEl.firstChild) {
+                            const child = sourceEl.firstChild;
+                            
+                            // Récursivité pour les sous-éléments cachés
+                            if (child.nodeType === 1 && child.hasAttribute('nav-cache')) {
+                                const subKey = child.getAttribute('nav-cache');
+                                const subFragment = window.NodeCache?.registry?.get(subKey);
+                                if (subFragment instanceof DocumentFragment && subFragment.hasChildNodes()) {
+                                    document.adoptNode(child);
+                                    child.appendChild(subFragment);
+                                    targetEl.appendChild(child);
+                                    continue;
+                                }
                             }
+                            document.adoptNode(child);
+                            targetEl.appendChild(child);
                         }
-
-                        document.adoptNode(child);
-                        targetEl.appendChild(child);
                     }
 
+                    // On synchronise les attributs du slot (pour les classes ou la nouvelle clé de cache)
                     Array.from(sourceEl.attributes).forEach(a => targetEl.setAttribute(a.name, a.value));
                 }
             });
