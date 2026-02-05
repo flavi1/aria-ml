@@ -138,11 +138,6 @@ header('X-Debug-testClient-Keys: ' . var_export($testClient, true));
 
             // Une seule instanciation (Parse + Volatile classes via le constructeur)
             $aria = new AriaML($buffer);
-            
-            // Nettoyage du cache si nécessaire
-            if ($wantsAriaML) {
-                $aria->cleanNodeCache($knownKeys);
-            }
 
             $scriptTag = '<script src="https://flavi1.github.io/aria-ml/src/standalone.js"></script>';
             
@@ -162,6 +157,11 @@ header('X-Debug-testClient-Keys: ' . var_export($testClient, true));
                 
                 // Remplacement de la référence pour l'extraction
                 $aria->ariaNode = $fragment;
+            }
+
+            // Nettoyage du cache si nécessaire
+            if ($wantsAriaML) {
+                $aria->cleanNodeCache($knownKeys);
             }
 
             // Extraction du HTML final
