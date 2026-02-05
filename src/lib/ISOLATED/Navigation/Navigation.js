@@ -212,7 +212,6 @@ class AriaMLNavigation {
             });
 
             if (pushState) history.pushState(null, '', url);
-            window.scrollTo(0, 0);
         };
 
         if (useTransition) await document.startViewTransition(() => performUpdate()).finished;
@@ -225,10 +224,11 @@ class AriaMLNavigation {
 
         const manageFocus = (container) => {
             const auto = container.querySelector('[autofocus]');
-            if (auto) auto.focus();
-            else {
+            if (auto) {
+                auto.focus({ preventScroll: false });
+            } else {
                 if (!container.hasAttribute('tabindex')) container.setAttribute('tabindex', '-1');
-                container.focus();
+                container.focus({ preventScroll: false });
             }
         };
 
