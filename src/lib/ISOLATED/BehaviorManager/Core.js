@@ -56,7 +56,7 @@ const behaviorCore = (() => {
         
         
         document.addEventListener(type, async (e) => {
-            const el = e.target.closest('*');
+            const el = (e.target == document) ? document.documentElement : e.target.closest('*');
             if (!el || !el.behavior) return;
             
             const props = getResolvedProps(el);
