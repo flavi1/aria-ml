@@ -171,7 +171,7 @@ class AriaML {
             $output = preg_replace('/^<\?xml[^?]*\?>/i', '', trim($output));
             
             
-$output .= '<pre>'var_export($knownKeys, 1).'</pre>';
+$output .= '<pre>'.var_export($knownKeys, 1).'</pre>';
 
             if ($wantsAriaML) {
                 if ($wantsFragment) {
