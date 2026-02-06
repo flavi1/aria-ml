@@ -247,7 +247,7 @@ class AriaMLDocument {
             $clean_val = htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
             $html .= " {$clean_key}=\"{$clean_val}\"";
         }
-        return $html;
+        echo $html;
     }
     
     function end() {
