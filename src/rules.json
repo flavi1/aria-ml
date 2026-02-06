@@ -10,6 +10,11 @@
                     "operation": "set",
                     "value": "text/aria-ml, text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8"
                 }
+                {
+                    "header": "Ariaml-Force-Content-Type",
+                    "operation": "set",
+                    "value": "text/html, application/xhtml+xml"
+                }
             ]
         },
         "condition": {

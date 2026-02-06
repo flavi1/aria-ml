@@ -186,6 +186,7 @@ class AriaML {
 
             if ($wantsAriaML) {
                 if ($wantsFragment) {
+var_dump($_SERVER); die();
                     header('Content-Type: text/aria-ml-fragment; charset=utf-8');
                     echo $output;
                 } else {
