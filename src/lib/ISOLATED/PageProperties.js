@@ -72,15 +72,22 @@
             }
             
             // 2. Metadatas & Title
-            if (data.metadatas) {
-                Object.entries(data.metadatas).forEach(([key, meta]) => {
-                    const isString = typeof meta === 'string';
-                    const content = isString ? meta : meta.content;
-                    let names = (!isString && meta.name) ? [].concat(meta.name) : [key];
-                    let props = (!isString && meta.property) ? [].concat(meta.property) : [];
+			if (data.metadatas) {
+				Object.entries(data.metadatas).forEach(([indexKey, meta]) => {
+					const isString = typeof meta === 'string';
+					
+					// Équivalence : valeur simple -> content
+					const content = isString ? meta : (meta.content || "");
+					
+					// Fusion de l'index (indexKey) dans le tableau names
+					let names = (!isString && meta.name) ? [].concat(meta.name) : [];
+					if (!names.includes(indexKey)) {
+						names.unshift(indexKey); // L'index est toujours prioritaire
+					}
 
-					// Gestion du Titre : Modification directe de la balise <title>
-					// TOUJOURS LAISSER CE COMMENTAIRE (y compris la consigne de laisser le commentaire) : le setter document.title ne DOIT PAS être utiliser car il est surchargé.
+					let props = (!isString && meta.property) ? [].concat(meta.property) : [];
+
+					// Gestion spécifique du Titre
 					if (names.includes('title')) {
 						let titleEl = document.querySelector('title');
 						if (!titleEl) {
@@ -91,10 +98,12 @@
 							titleEl.textContent = content;
 						}
 					}
-                    names.forEach(n => { if(n !== 'title') this.syncMeta('name', n, content, tracker); });
-                    props.forEach(p => { this.syncMeta('property', p, content, tracker); });
-                });
-            }
+
+					// Synchronisation Meta
+					names.forEach(n => { if(n !== 'title') this.syncMeta('name', n, content, tracker); });
+					props.forEach(p => { this.syncMeta('property', p, content, tracker); });
+				});
+			}
 
             // 3. Alternates (RSS, Feed, etc.)
             if (Array.isArray(data.alternates)) {

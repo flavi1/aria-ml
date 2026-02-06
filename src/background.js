@@ -71,6 +71,7 @@ async function injectAriaResources(tabId, frameId) {
         // 4. Injection des scripts JS (ISOLATED ou MAIN)
         if (resources.js) {
             for (const s of resources.js) {
+				console.log('Injection '+s+' ok ?')
                 await api.scripting.executeScript({
                     target: { tabId: tabId, frameIds: [frameId] },
                     files: [s],
@@ -101,8 +102,8 @@ api.webNavigation.onCommitted.addListener((details) => {
                     console.info('Document converti du AriaML vers HTML par la web extension.');
                 }
                 else
-					console.info('Ce document n\'est pas un document AriaML.');
-                document.documentElement.style.display = 'block';
+					document._needAriaML = false;	// explicit false => disconnect observer
+					
             }
         });
 

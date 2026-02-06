@@ -98,3 +98,5 @@ class AriaMLAttributeSync {
 
 AriaMLAttributeSync.observeAndSync('aria-ml', document.documentElement);
 AriaMLAttributeSync.observeAndSync('#body', document.body);
+
+"END OF FILE";

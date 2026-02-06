@@ -4,41 +4,33 @@
  */
 (function() {
     const check = () => {
-        // On cherche le PRE n'importe où (le navigateur peut changer sa structure)
-        const pre = document.querySelector('pre');
-        
-        // On s'assure que le PRE existe ET qu'il contient du texte (le flux est en cours)
-        if (pre && pre.textContent.trim().length > 0) {
-			const src = pre.textContent
-            
-            document.documentElement.style.display = 'none';
-            
-			const isAria = (raw) => {
-				for(begin of ['<!DOCTYPE aria-ml>', '<aria-ml>', '<aria-ml ', "<aria-ml\n" ])
-					if(raw.indexOf(begin) === 0)
-						return true;
-			}
+		if(typeof document._needAriaML !== 'undefined' && !document._needAriaML) {
+			return;
+		}
+		if(document.head && document.head.hasAttribute('data-ssr'))
+			return;
+		if(document.querySelector('body > aria-ml')) {
+			const m =document.createElement('meta')
+			m.setAttribute('charset', 'UTF-8')
+			document.head.prepend(m);
+			document._needAriaML = true;
+			observer.disconnect();
+			return true;
+		}
+		else {
+			const pre = document.querySelector('pre');
 			const isAriaFragment = (raw) => {
 				for(begin of ['<!DOCTYPE aria-ml-fragment>', '<aria-ml-fragment>', '<aria-ml-fragment ', "<aria-ml-fragment\n" ])
 					if(raw.indexOf(begin) === 0)
 						return true;
+				if(isAriaFragment(src)) {
+					location.reload();
+					observer.disconnect();
+				}
 			}
-			
-			document._needAriaML = isAria(src);
-			if(document._needAriaML) {
-				document.head.innerHTML = '<meta charset="UTF-8">'
-				document.body.innerHTML = src;
-			}
-			
-			if(isAriaFragment(src))
-				location.reload();
-			else
-				document.documentElement.style.display = 'block';
+		}
             
-            observer.disconnect();
-            return true;
-        }
-        return false;
+        
     };
 
     const observer = new MutationObserver((mutations) => {
@@ -54,9 +46,5 @@
         childList: true, 
         subtree: true 
     });
-	
-	document.documentElement.style.display = 'none';	// anti flickering
-	
-    // Au cas où le contenu serait déjà là (très rare à document_start, mais possible)
     check();
 })();
