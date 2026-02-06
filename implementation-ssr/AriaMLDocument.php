@@ -145,6 +145,7 @@ class AriaMLDocument {
 
         // Nettoyage final
         foreach (['metadatas', 'alternates', 'links', 'translations'] as $key) {
+			if(!empty($data[$key])) $props[$key] = array_merge($props[$key], $data[$key]);
             if (empty($props[$key])) unset($props[$key]);
         }
         
