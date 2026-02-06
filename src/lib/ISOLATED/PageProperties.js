@@ -1,5 +1,5 @@
 /**
- * AriaML PageProperties.ISOLATED.js (Optimisé v1.5)
+ * AriaML PageProperties.ISOLATED.js (Optimisé v1.5.1)
  * Renderer : Synchronise le HEAD avec Fallbacks SEO & Multi-type support.
  */
 (function() {
@@ -35,10 +35,12 @@
             for (const s of scripts) {
                 try {
                     const j = JSON.parse(s.textContent);
-                    // Support du multi-typage [@type: ["PageProperties", "WebPage"]] ou simple string
-                    const found = (Array.isArray(j) ? j : [j]).find(i => {
+                    const items = Array.isArray(j) ? j : [j];
+                    const found = items.find(i => {
                         const type = i["@type"];
-                        return Array.isArray(type) ? type.includes("PageProperties") : type === "PageProperties";
+                        const types = Array.isArray(type) ? type : [type];
+                        // Détection stricte : PageProperties seul ou avec votre préfixe spécifique
+                        return types.some(t => t === "PageProperties" || t === "ariaml:PageProperties");
                     });
                     if (found) return found;
                 } catch (e) { continue; }
@@ -47,7 +49,7 @@
         },
 
         syncRootAttributes: function(rootAria, data) {
-            const rootProps = { 'lang': data.lang, 'dir': data.dir};
+            const rootProps = { 'lang': data.inLanguage || data.lang, 'dir': data.dir };
             Object.entries(rootProps).forEach(([k, v]) => {
                 if (v && rootAria.getAttribute(k) !== v) {
                     rootAria.setAttribute(k, v);
@@ -74,8 +76,6 @@
 
             // --- 2. Singletons & Canonical (via data.url) ---
             const singletons = ['me', 'shortlink', 'manifest', 'author', 'license'];
-            
-            // Gestion spécifique du canonical via la nouvelle clé 'url'
             const canonicalUrl = data.url || data.canonical; 
             if (canonicalUrl) {
                 this.syncLink('canonical', canonicalUrl, {}, tracker);
@@ -91,8 +91,7 @@
             // --- 3. Metadatas classiques AriaML ---
             if (data.metadatas) {
                 Object.entries(data.metadatas).forEach(([indexKey, meta]) => {
-                    if (indexKey === 'title' || indexKey === 'description') return;
-                    
+                    if (['title', 'description'].includes(indexKey)) return;
                     const isString = typeof meta === 'string';
                     const content = isString ? meta : (meta.content || "");
                     let names = (!isString && meta.name) ? [].concat(meta.name) : [];
@@ -104,9 +103,22 @@
                 });
             }
 
-            // --- 4. Alternates & Translations ---
-            const allAlternates = (data.alternates || []).concat(data.translations || []);
-            allAlternates.forEach(alt => {
+            // --- 4. Alternates & Translations (Mapping Sémantique) ---
+            let alternates = [].concat(data.alternates || []);
+            
+            // Mapping automatique de workTranslation (Schema.org) vers link[alternate]
+            if (data.workTranslation) {
+                const trans = Array.isArray(data.workTranslation) ? data.workTranslation : [data.workTranslation];
+                trans.forEach(t => {
+                    alternates.push({
+                        href: t.url,
+                        hreflang: t.inLanguage,
+                        title: t.name || null
+                    });
+                });
+            }
+
+            alternates.forEach(alt => {
                 const rel = alt.rel ? `alternate ${alt.rel}` : 'alternate';
                 this.syncLink(rel, alt.href, alt, tracker);
             });
@@ -140,10 +152,9 @@
             if (el.content !== content) el.content = content;
         },
 
-		syncLink: function(rel, href, attrs, tracker) {
-            // Pour le canonical, on veut un sélecteur UNIQUE (un seul par page)
-            // Pour les autres (alternates), on garde la précision href/hreflang
+        syncLink: function(rel, href, attrs, tracker) {
             let sel = `link[rel="${rel}"]`;
+            // Unicité absolue pour le canonical, précision pour les autres
             if (rel !== 'canonical') { 
                 sel += `[href="${href}"]`;
                 if (attrs.hreflang) sel += `[hreflang="${attrs.hreflang}"]`;
@@ -158,16 +169,17 @@
                 document.head.appendChild(el);
             }
             
-            // On met à jour l'URL (si c'est un canonical, il écrase l'ancien href)
             if (el.getAttribute('href') !== href) el.href = href;
 
-            // On synchronise les autres attributs (title, type, etc.)
             Object.entries(attrs).forEach(([k, v]) => {
-                if (!['rel', 'href'].includes(k) && el.getAttribute(k) !== v) el.setAttribute(k, v);
+                if (!['rel', 'href'].includes(k) && v && el.getAttribute(k) !== v) {
+                    el.setAttribute(k, v);
+                }
             });
         }
     };
 
+    // ... (Logique setupObservation identique au précédent)
     const setupObservation = () => {
         const root = document.querySelector('aria-ml');
         if (!root) return;
@@ -192,9 +204,8 @@
     document.addEventListener('ariaml:updated', () => AriaMLRenderer.render());
     setupObservation();
 
-    if (!isSSR) {
-        AriaMLRenderer.render();
-    } else {
+    if (!isSSR) AriaMLRenderer.render();
+    else {
         const data = AriaMLRenderer.parse();
         if (data) AriaMLRenderer.lastDataHash = JSON.stringify(data);
     }
