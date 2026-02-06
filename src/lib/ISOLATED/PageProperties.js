@@ -164,7 +164,7 @@
             if (needsCheck) AriaMLRenderer.render();
         });
         const contentObserver = new MutationObserver(() => AriaMLRenderer.render());
-        const existingScripts = root.querySelectorAll('script[type="application/ld+json"], script[type="script[type="ld+json"]');
+        const existingScripts = root.querySelectorAll('script[type="application/ld+json"], script[type="ld+json"]');
         existingScripts.forEach(s => contentObserver.observe(s, { characterData: true, childList: true }));
         structureObserver.observe(root, { childList: true, subtree: true });
     };
