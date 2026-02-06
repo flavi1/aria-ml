@@ -12,3 +12,8 @@
 	rel-list: "a";
 	on-current-change: update-current(page, list@href);
 }
+
+#toc {
+	rel-list: "a";
+	on-current-change: update-current(location, list@href);
+}

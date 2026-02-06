@@ -119,7 +119,10 @@ class AriaMLDocument {
     
     function outputPageProperties($data = [], $head_html = null) {
         $props = [
-            "@context"   => "https://ariaml.com/ns/PageProperties/",
+            "@context"   => [
+				"https://schema.org/",
+				"https://ariaml.com/ns/PageProperties/"
+			],
             "@type"      => ["PageProperties", "WebPage"],
             "metadatas"  => []
         ];

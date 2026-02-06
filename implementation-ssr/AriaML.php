@@ -143,7 +143,7 @@ class AriaML {
 
         ob_start();
 
-        return function() use ($wantsAriaML, $wantsFragment, $testClient, $knownKeys) {
+        return function() use ($wantsAriaML, $wantsFragment, $testClient) {
             $buffer = trim(ob_get_clean());
             if (empty($buffer)) return;
 
@@ -158,9 +158,9 @@ class AriaML {
                 
                 // Transfert des attributs (nav-base-url, lang, etc.)
                 foreach ($aria->ariaNode->attributes as $attr) {
+					echo $attr->nodeName.':'.$attr->nodeValue."\n";
                     $fragment->setAttribute($attr->nodeName, $attr->nodeValue);
                 }
-                
                 // Transfert des nœuds enfants
                 while ($aria->ariaNode->firstChild) {
                     $fragment->appendChild($aria->ariaNode->firstChild);

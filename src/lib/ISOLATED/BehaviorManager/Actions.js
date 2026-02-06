@@ -148,14 +148,32 @@ const behaviorActions = (() => {
 			if(event.detail.type == args[0]) {
 				const t = resolveTarget(el, args[1]);
 				if(t.type == 'attribute' && t.nodes.length) {
+					let matched = null
 					t.nodes.forEach((n) => {
 						if(n.getAttribute(t.name) != event.detail.value)
 							n.removeAttribute('aria-current')
 						else
-							n.setAttribute('aria-current', event.detail.type)
+							if(!matched)
+								matched = n;
 					})
+					if(matched)
+						matched.setAttribute('aria-current', event.detail.type)
 				}
 			}
+		},
+		'set-current': (el, {args}) => {
+			let type = resolveTarget(el, args[0]);
+			let value = resolveTarget(el, args[1]);
+			if(type.type == 'attribute' && type.nodes.length)
+				type = type.nodes[0].getAttribute(type.name)
+			if(value.type == 'attribute' && value.nodes.length)
+				value = value.nodes[0].getAttribute(value.name)
+			
+            document.dispatchEvent(new CustomEvent('current-change', {
+                detail: {type,value},
+                bubbles: true,
+                cancelable: true
+            }));
 		}
     };
 
