@@ -19,14 +19,12 @@ class AriaMLDocument {
     
     function extractInlineStyles($head_html) {
         if (empty($head_html)) return [];
-        $styles = [];
         preg_match_all('/<style[^>]*?>.*?<\/style>/is', $head_html, $matches);
         return !empty($matches[0]) ? $matches[0] : [];
     }
     
     function extractScripts($head_html) {
         if (empty($head_html)) return [];
-        $scripts = [];
         preg_match_all('/<script[^>]*?>.*?<\/script>/is', $head_html, $matches);
         return !empty($matches[0]) ? $matches[0] : [];
     }
@@ -122,21 +120,29 @@ class AriaMLDocument {
     function outputPageProperties($data = [], $head_html = null) {
         $props = [
             "@context"   => "https://ariaml.com/ns/PageProperties/",
-            "@type"      => "PageProperties",
+            "@type"      => ["PageProperties", "WebPage"],
             "metadatas"  => []
         ];
         
-        // --- 1. Bridge SEO (Propriétés de premier niveau) ---
+        // --- 1. Bridge SEO ---
         if(isset($data['title'])) $props['name'] = $this->formatMeta($data['title']);
         if(isset($data['description'])) $props['description'] = $this->formatMeta($data['description']);
-        if(isset($data['canonical'])) $props['canonical'] = $data['canonical'];
+        if(isset($data['url'])) $props['url'] = $data['url'];
         if(isset($data['csrf-token'])) $props['csrf-token'] = $data['csrf-token'];
         if(isset($data['last-modified'])) $props['last-modified'] = $data['last-modified'];
         if(isset($data['lang'])) $props['lang'] = $data['lang'];
         if(isset($data['dir'])) $props['dir'] = $data['dir'];
 
+        // Hydratation (metas, links, alternates, translations)
         if($head_html) $this->hydrateProperties($props, $head_html);
         
+        // --- 2. Post-Traitement Canonical & ID ---
+        // Si url n'est pas fourni dans $data mais trouvé dans le head via hydrateProperties
+        if(!isset($props['url']) && isset($data['canonical'])) $props['url'] = $data['canonical'];
+        
+        // Attribution de l'ID pour le graphe Google
+        if(isset($props['url'])) $props['id'] = $props['url'] . "#webpage";
+
         // Nettoyage final
         foreach (['metadatas', 'alternates', 'links', 'translations'] as $key) {
             if (empty($props[$key])) unset($props[$key]);
@@ -159,19 +165,15 @@ class AriaMLDocument {
             
             $val = $c[1];
             if ($has_name) { 
-                // Capture spécifique pour les propriétés Bridge SEO si non définies
                 if ($n[1] === 'description' && !isset($props['description'])) $props['description'] = $val;
                 if ($n[1] === 'last-modified' && !isset($props['last-modified'])) $props['last-modified'] = $val;
-                
                 $rawValues[$n[1]] = $val; $rawTypes[$n[1]] = 'name'; 
             }
             if ($has_property) { $rawValues[$p[1]] = $val; $rawTypes[$p[1]] = 'property'; }
         }
 
         foreach ($rawValues as $key => $content) {
-            // On ignore le titre et la description déjà gérés par le Bridge
             if ($key === 'title' || $key === 'description') continue;
-
             $parts = explode(':', $key);
             $root  = end($parts); 
             $type  = $rawTypes[$key];
@@ -187,10 +189,10 @@ class AriaMLDocument {
             }
         }
 
-        // --- PARTIE 2 : LINK TAGS (Alternates, Translations, Links) ---
+        // --- PARTIE 2 : LINK TAGS ---
         preg_match_all('/<link\s+([^>]+)>/i', $head_html, $linkMatches);
         
-        $singletons = ['canonical', 'me', 'shortlink', 'manifest', 'author', 'license'];
+        $singletons = ['me', 'shortlink', 'manifest', 'author', 'license'];
         $appearanceRels = ['stylesheet', 'icon', 'apple-touch-icon', 'shortcut icon'];
 
         foreach ($linkMatches[1] as $attributes) {
@@ -202,20 +204,24 @@ class AriaMLDocument {
 
             if (!isset($asset['rel']) || !isset($asset['href'])) continue;
             $rel = strtolower($asset['rel']);
+
+            // Extraction du canonical si absent des propriétés racines
+            if ($rel === 'canonical' && !isset($props['url'])) {
+                $props['url'] = $asset['href'];
+                continue; 
+            }
+
             if (in_array($rel, $appearanceRels)) continue;
 
-            // Cas A : Translations (hreflang présent)
             if (isset($asset['hreflang'])) {
                 $props['translations'][] = $asset;
             }
-            // Cas B : Alternates classiques
             else if (strpos($rel, 'alternate') !== false) {
                 $cleanRel = trim(str_replace('alternate', '', $rel));
                 if (empty($cleanRel)) unset($asset['rel']); else $asset['rel'] = $cleanRel;
                 $props['alternates'][] = $asset;
             } 
-            // Cas C : Autres liens
-            else if (!in_array($rel, $singletons)) {
+            else if (!in_array($rel, $singletons) && $rel !== 'canonical') {
                 $props['links'][] = $asset;
             }
         }
@@ -240,7 +246,7 @@ class AriaMLDocument {
             $clean_val = htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
             $html .= " {$clean_key}=\"{$clean_val}\"";
         }
-        echo $html;
+        return $html;
     }
     
     function end() {

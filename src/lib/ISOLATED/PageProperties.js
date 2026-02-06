@@ -1,6 +1,6 @@
 /**
- * AriaML PageProperties.ISOLATED.js (Optimisé)
- * Renderer : Synchronise le HEAD avec Fallbacks SEO (s:name, s:description).
+ * AriaML PageProperties.ISOLATED.js (Optimisé v1.5)
+ * Renderer : Synchronise le HEAD avec Fallbacks SEO & Multi-type support.
  */
 (function() {
     const isSSR = document.head.hasAttribute('data-ssr');
@@ -35,7 +35,11 @@
             for (const s of scripts) {
                 try {
                     const j = JSON.parse(s.textContent);
-                    const found = (Array.isArray(j) ? j : [j]).find(i => i["@type"] === "PageProperties");
+                    // Support du multi-typage [@type: ["PageProperties", "WebPage"]] ou simple string
+                    const found = (Array.isArray(j) ? j : [j]).find(i => {
+                        const type = i["@type"];
+                        return Array.isArray(type) ? type.includes("PageProperties") : type === "PageProperties";
+                    });
                     if (found) return found;
                 } catch (e) { continue; }
             }
@@ -54,7 +58,7 @@
         },
 
         syncHead: function(data, tracker) {
-            // --- 1. Singletons & Bridge SEO (name, description, canonical) ---
+            // --- 1. Titre & Description (SEO Bridge) ---
             const pageTitle = data.name || (data.metadatas?.title?.content || data.metadatas?.title);
             if (pageTitle) {
                 let titleEl = document.querySelector('title');
@@ -68,19 +72,26 @@
             const pageDesc = data.description || (data.metadatas?.description?.content || data.metadatas?.description);
             if (pageDesc) this.syncMeta('name', 'description', pageDesc, tracker);
 
-            const singletons = ['canonical', 'me', 'shortlink', 'manifest', 'author', 'license'];
+            // --- 2. Singletons & Canonical (via data.url) ---
+            const singletons = ['me', 'shortlink', 'manifest', 'author', 'license'];
+            
+            // Gestion spécifique du canonical via la nouvelle clé 'url'
+            const canonicalUrl = data.url || data.canonical; 
+            if (canonicalUrl) {
+                this.syncLink('canonical', canonicalUrl, {}, tracker);
+            }
+
             singletons.forEach(rel => {
-                const val = (rel === 'canonical' && data.canonical) ? data.canonical : data[rel];
-                if (val) this.syncLink(rel, val, {}, tracker);
+                if (data[rel]) this.syncLink(rel, data[rel], {}, tracker);
             });
 
             if (data['csrf-token']) this.syncMeta('name', 'csrf-token', data['csrf-token'], tracker);
             if (data['last-modified']) this.syncMeta('name', 'last-modified', data['last-modified'], tracker);
             
-            // --- 2. Metadatas classiques AriaML (Index-based) ---
+            // --- 3. Metadatas classiques AriaML ---
             if (data.metadatas) {
                 Object.entries(data.metadatas).forEach(([indexKey, meta]) => {
-                    if (indexKey === 'title' || indexKey === 'description') return; // Déjà géré par les fallbacks
+                    if (indexKey === 'title' || indexKey === 'description') return;
                     
                     const isString = typeof meta === 'string';
                     const content = isString ? meta : (meta.content || "");
@@ -93,14 +104,14 @@
                 });
             }
 
-            // --- 3. Alternates & Translations (s:workTranslation) ---
+            // --- 4. Alternates & Translations ---
             const allAlternates = (data.alternates || []).concat(data.translations || []);
             allAlternates.forEach(alt => {
                 const rel = alt.rel ? `alternate ${alt.rel}` : 'alternate';
                 this.syncLink(rel, alt.href, alt, tracker);
             });
 
-            // --- 4. Links (Internal REST / Navigation) ---
+            // --- 5. Links (Internal REST) ---
             if (Array.isArray(data.links)) {
                 data.links.forEach(l => this.syncLink(l.rel, l.href, l, tracker));
             }
@@ -129,19 +140,28 @@
             if (el.content !== content) el.content = content;
         },
 
-        syncLink: function(rel, href, attrs, tracker) {
-            let sel = `link[rel="${rel}"][href="${href}"]`;
-            if (attrs.title) sel += `[title="${attrs.title}"]`;
-            if (attrs.type) sel += `[type="${attrs.type}"]`;
-            if (attrs.hreflang) sel += `[hreflang="${attrs.hreflang}"]`;
+		syncLink: function(rel, href, attrs, tracker) {
+            // Pour le canonical, on veut un sélecteur UNIQUE (un seul par page)
+            // Pour les autres (alternates), on garde la précision href/hreflang
+            let sel = `link[rel="${rel}"]`;
+            if (rel !== 'canonical') { 
+                sel += `[href="${href}"]`;
+                if (attrs.hreflang) sel += `[hreflang="${attrs.hreflang}"]`;
+            }
             
             tracker.add(sel);
             let el = document.head.querySelector(sel);
+
             if (!el) {
                 el = document.createElement('link');
-                el.rel = rel; el.href = href;
+                el.rel = rel;
                 document.head.appendChild(el);
             }
+            
+            // On met à jour l'URL (si c'est un canonical, il écrase l'ancien href)
+            if (el.getAttribute('href') !== href) el.href = href;
+
+            // On synchronise les autres attributs (title, type, etc.)
             Object.entries(attrs).forEach(([k, v]) => {
                 if (!['rel', 'href'].includes(k) && el.getAttribute(k) !== v) el.setAttribute(k, v);
             });
