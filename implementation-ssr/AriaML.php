@@ -186,11 +186,11 @@ class AriaML {
 
             if ($wantsAriaML) {
                 if ($wantsFragment) {
-var_dump($_SERVER); die();
                     header('Content-Type: text/aria-ml-fragment; charset=utf-8');
                     echo $output;
                 } else {
-                    header('Content-Type: ' . ($testClient ? 'text/html' : 'text/aria-ml') . '; charset=utf-8');
+					$ariamlCT = $_SERVER['HTTP_ARIAML_FORCE_HTML'] == 'true' ? 'text/html' : 'text/aria-ml'
+                    header('Content-Type: ' . ($testClient ? 'text/html' : $ariamlCT) . '; charset=utf-8');
                     echo ($testClient ? "\n" : "") . $output . ($testClient ? $scriptTag : "");
                 }
                 exit;
