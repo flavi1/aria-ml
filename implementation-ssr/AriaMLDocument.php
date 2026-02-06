@@ -174,7 +174,7 @@ class AriaMLDocument {
 		
 		// 1. Initialisation de base (Fallbacks de référence)
 		$props = [
-			"@context"   => "https://ariaml.com/ns/PageProperties",
+			"@context"   => "https://ariaml.com/ns/PageProperties/",
 			"@type"      => "PageProperties",
 			"metadatas"  => []
 		];
