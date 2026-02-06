@@ -1,6 +1,6 @@
 /**
  * AriaML PageProperties.ISOLATED.js (Optimisé)
- * Renderer : Synchronise le HEAD à partir des balises scripts spécifiques.
+ * Renderer : Synchronise le HEAD avec Fallbacks SEO (s:name, s:description).
  */
 (function() {
     const isSSR = document.head.hasAttribute('data-ssr');
@@ -31,7 +31,6 @@
         },
 
         parse: function() {
-            // Supporte LD+JSON et le format "json" DX-friendly
             const scripts = document.querySelectorAll('aria-ml script[type="application/ld+json"], aria-ml script[type="ld+json"]');
             for (const s of scripts) {
                 try {
@@ -43,81 +42,67 @@
             return null;
         },
 
-		syncRootAttributes: function(rootAria, data) {
-			// On ne synchronise ici que les métadonnées logiques issues de PageProperties
-			const rootProps = { 'lang': data.lang, 'dir': data.dir, 'translate': data.translate };
-			Object.entries(rootProps).forEach(([k, v]) => {
-				// En modifiant rootAria (source), l'Observer mettra à jour automatiquement le documentElement (target)
-				if (v && rootAria.getAttribute(k) !== v) {
-					rootAria.setAttribute(k, v);
-				}
-			});
-			
-			// La gestion du CSP reste ici car elle impacte les balises meta, pas les attributs du tag
-			const csp = rootAria.getAttribute('csp');
-			if (csp) {
-				this.syncMeta(null, 'Content-Security-Policy', csp, new Set(), true);
-			}
-		},
+        syncRootAttributes: function(rootAria, data) {
+            const rootProps = { 'lang': data.lang, 'dir': data.dir};
+            Object.entries(rootProps).forEach(([k, v]) => {
+                if (v && rootAria.getAttribute(k) !== v) {
+                    rootAria.setAttribute(k, v);
+                }
+            });
+            const csp = rootAria.getAttribute('csp');
+            if (csp) this.syncMeta(null, 'Content-Security-Policy', csp, new Set(), true);
+        },
 
-		syncHead: function(data, tracker) {
-            // 1. Singletons
+        syncHead: function(data, tracker) {
+            // --- 1. Singletons & Bridge SEO (name, description, canonical) ---
+            const pageTitle = data.name || (data.metadatas?.title?.content || data.metadatas?.title);
+            if (pageTitle) {
+                let titleEl = document.querySelector('title');
+                if (!titleEl) {
+                    titleEl = document.createElement('title');
+                    document.head.appendChild(titleEl);
+                }
+                if (titleEl.textContent !== pageTitle) titleEl.textContent = pageTitle;
+            }
+
+            const pageDesc = data.description || (data.metadatas?.description?.content || data.metadatas?.description);
+            if (pageDesc) this.syncMeta('name', 'description', pageDesc, tracker);
+
             const singletons = ['canonical', 'me', 'shortlink', 'manifest', 'author', 'license'];
             singletons.forEach(rel => {
-                if (data[rel]) this.syncLink(rel, data[rel], {}, tracker);
+                const val = (rel === 'canonical' && data.canonical) ? data.canonical : data[rel];
+                if (val) this.syncLink(rel, val, {}, tracker);
             });
 
-            if (data['csrf-token']) {
-                this.syncMeta('name', 'csrf-token', data['csrf-token'], tracker);
-            }
+            if (data['csrf-token']) this.syncMeta('name', 'csrf-token', data['csrf-token'], tracker);
+            if (data['last-modified']) this.syncMeta('name', 'last-modified', data['last-modified'], tracker);
             
-            // 2. Metadatas & Title
-			if (data.metadatas) {
-				Object.entries(data.metadatas).forEach(([indexKey, meta]) => {
-					const isString = typeof meta === 'string';
-					
-					// Équivalence : valeur simple -> content
-					const content = isString ? meta : (meta.content || "");
-					
-					// Fusion de l'index (indexKey) dans le tableau names
-					let names = (!isString && meta.name) ? [].concat(meta.name) : [];
-					if (!names.includes(indexKey)) {
-						names.unshift(indexKey); // L'index est toujours prioritaire
-					}
+            // --- 2. Metadatas classiques AriaML (Index-based) ---
+            if (data.metadatas) {
+                Object.entries(data.metadatas).forEach(([indexKey, meta]) => {
+                    if (indexKey === 'title' || indexKey === 'description') return; // Déjà géré par les fallbacks
+                    
+                    const isString = typeof meta === 'string';
+                    const content = isString ? meta : (meta.content || "");
+                    let names = (!isString && meta.name) ? [].concat(meta.name) : [];
+                    if (!names.includes(indexKey)) names.unshift(indexKey);
 
-					let props = (!isString && meta.property) ? [].concat(meta.property) : [];
-
-					// Gestion spécifique du Titre
-					if (names.includes('title')) {
-						let titleEl = document.querySelector('title');
-						if (!titleEl) {
-							titleEl = document.createElement('title');
-							document.head.appendChild(titleEl);
-						}
-						if (titleEl.textContent !== content) {
-							titleEl.textContent = content;
-						}
-					}
-
-					// Synchronisation Meta
-					names.forEach(n => { if(n !== 'title') this.syncMeta('name', n, content, tracker); });
-					props.forEach(p => { this.syncMeta('property', p, content, tracker); });
-				});
-			}
-
-            // 3. Alternates (RSS, Feed, etc.)
-            if (Array.isArray(data.alternates)) {
-                data.alternates.forEach(alt => {
-                    const rel = alt.rel ? `alternate ${alt.rel}` : 'alternate';
-                    this.syncLink(rel, alt.href, alt, tracker);
+                    let props = (!isString && meta.property) ? [].concat(meta.property) : [];
+                    names.forEach(n => this.syncMeta('name', n, content, tracker));
+                    props.forEach(p => this.syncMeta('property', p, content, tracker));
                 });
             }
 
-            // 4. Links (REST API, Pingback...)
+            // --- 3. Alternates & Translations (s:workTranslation) ---
+            const allAlternates = (data.alternates || []).concat(data.translations || []);
+            allAlternates.forEach(alt => {
+                const rel = alt.rel ? `alternate ${alt.rel}` : 'alternate';
+                this.syncLink(rel, alt.href, alt, tracker);
+            });
+
+            // --- 4. Links (Internal REST / Navigation) ---
             if (Array.isArray(data.links)) {
-                data.links.forEach(l => {
-                    this.syncLink(l.rel, l.href, l, tracker);
-                });
+                data.links.forEach(l => this.syncLink(l.rel, l.href, l, tracker));
             }
         },
         
@@ -132,8 +117,6 @@
         },
 
         syncMeta: function(attr, val, content, tracker, isEquiv = false) {
-			if(attr == 'name' && val == 'title')
-				return;
             const key = isEquiv ? 'http-equiv' : attr;
             const sel = `meta[${key}="${val}"]`;
             if (tracker) tracker.add(sel);
@@ -150,6 +133,7 @@
             let sel = `link[rel="${rel}"][href="${href}"]`;
             if (attrs.title) sel += `[title="${attrs.title}"]`;
             if (attrs.type) sel += `[type="${attrs.type}"]`;
+            if (attrs.hreflang) sel += `[hreflang="${attrs.hreflang}"]`;
             
             tracker.add(sel);
             let el = document.head.querySelector(sel);
@@ -164,41 +148,30 @@
         }
     };
 
-    // --- Observation Ciblée ---
     const setupObservation = () => {
         const root = document.querySelector('aria-ml');
         if (!root) return;
-
-        // 1. Observer l'ajout/suppression de scripts dans aria-ml
         const structureObserver = new MutationObserver((mutations) => {
             let needsCheck = false;
             for (const m of mutations) {
                 for (const node of m.addedNodes) {
                     if (node.nodeName === 'SCRIPT' && (node.type === 'application/ld+json' || node.type === 'ld+json')) {
                         needsCheck = true;
-                        // On attache un observer au contenu du nouveau script
                         contentObserver.observe(node, { characterData: true, childList: true });
                     }
                 }
             }
             if (needsCheck) AriaMLRenderer.render();
         });
-
-        // 2. Observer les changements de texte à l'intérieur des scripts
         const contentObserver = new MutationObserver(() => AriaMLRenderer.render());
-
-        // Initialisation des scripts existants
-        const existingScripts = root.querySelectorAll('script[type="application/ld+json"], script[type="ld+json"]');
+        const existingScripts = root.querySelectorAll('script[type="application/ld+json"], script[type="script[type="ld+json"]');
         existingScripts.forEach(s => contentObserver.observe(s, { characterData: true, childList: true }));
-
         structureObserver.observe(root, { childList: true, subtree: true });
     };
 
-    // Ecoute l'événement du Proxy (Main World)
     document.addEventListener('ariaml:updated', () => AriaMLRenderer.render());
-
-    // --- Initialisation ---
     setupObservation();
+
     if (!isSSR) {
         AriaMLRenderer.render();
     } else {
