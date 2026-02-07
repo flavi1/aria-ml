@@ -4,17 +4,15 @@
         managedNodes: new Map(),
 
         init() {
-            // 1. Force UTF-8
-            let charset = document.querySelector('meta[charset]');
-            if (!charset) {
-                charset = document.createElement('meta');
+            // Force UTF-8 immédiat
+            if (!document.querySelector('meta[charset]')) {
+                const charset = document.createElement('meta');
                 charset.setAttribute('charset', 'UTF-8');
                 document.head.prepend(charset);
             }
 
             this.parse();
 
-            // 2. Observer les mutations des scripts JSON-LD
             const observer = new MutationObserver(() => this.parse());
             observer.observe(document.documentElement, {
                 childList: true,
@@ -23,23 +21,59 @@
             });
         },
 
+        /**
+         * Parcourt et fusionne tous les blocs JSON-LD pertinents
+         */
         parse() {
             const scripts = document.querySelectorAll('script[type="application/ld+json"]');
-            let data = {};
+            let masterData = {};
+
             scripts.forEach(s => {
                 try {
                     const json = JSON.parse(s.textContent);
-                    if (json['@type'] === 'WebPage' || (json['@context'] && JSON.stringify(json['@context']).includes('"https://ariaml.com/ns/"'))) {
-                        data = Object.assign(data, json);
+                    
+                    // Détection plus souple du contexte AriaML ou du type WebPage
+                    const contextStr = JSON.stringify(json['@context'] || "");
+                    const isAriaML = contextStr.includes("ariaml.com/ns/");
+                    const isWebPage = json['@type'] === 'WebPage';
+
+                    if (isWebPage || isAriaML) {
+                        masterData = this.deepMerge(masterData, json);
                     }
-                } catch (e) {}
+                } catch (e) {
+                    console.error("[AriaML] JSON Error:", e);
+                }
             });
-console.info("[AriaML] WebPage extracted :", data)
-            this.sync(data);
+
+            console.info("[AriaML] WebPage Data Merged:", masterData);
+            this.sync(masterData);
+        },
+
+        /**
+         * Fusionne les objets (metadatas, properties) et concatène les listes
+         */
+        deepMerge(target, source) {
+            for (const key in source) {
+                const sVal = source[key];
+                const tVal = target[key];
+
+                if (Array.isArray(sVal)) {
+                    // Pour les listes (workTranslation, relatedLink, legacyLinks), on concatène
+                    target[key] = Array.isArray(tVal) ? tVal.concat(sVal) : sVal;
+                } 
+                else if (sVal !== null && typeof sVal === 'object' && !Array.isArray(sVal)) {
+                    // Pour les dictionnaires (metadatas, properties), on fusionne les clés
+                    target[key] = this.deepMerge(tVal || {}, sVal);
+                } 
+                else {
+                    // Valeur simple (name, url, csrfToken), la dernière l'emporte
+                    target[key] = sVal;
+                }
+            }
+            return target;
         },
 
         sync(data) {
-            // MARK: Tout est potentiellement à supprimer
             this.managedNodes.forEach(node => node._toBeRemoved = true);
 
             // --- 1. GLOBALS ---
@@ -49,7 +83,7 @@ console.info("[AriaML] WebPage extracted :", data)
             if (data.url) this.upsert('link', { rel: 'canonical' }, { href: data.url });
             if (data.csrfToken) this.upsert('meta', { name: 'csrf-token' }, { content: data.csrfToken });
 
-            // --- 2. METADATAS (name) ---
+            // --- 2. METADATAS ---
             if (data.metadatas) {
                 for (const [name, content] of Object.entries(data.metadatas)) {
                     if (this.linkSingletons.includes(name)) {
@@ -60,45 +94,40 @@ console.info("[AriaML] WebPage extracted :", data)
                 }
             }
 
-            // --- 3. PROPERTIES (property) ---
+            // --- 3. PROPERTIES ---
             if (data.properties) {
                 for (const [prop, val] of Object.entries(data.properties)) {
                     this.upsert('meta', { property: prop }, { content: val });
                 }
             }
 
-            // --- 4. WORK TRANSLATION (rel=alternate + hreflang) ---
+            // --- 4. LISTES (Traductions, Related, Legacy) ---
             if (data.workTranslation) {
                 data.workTranslation.forEach(t => {
                     this.upsert('link', { rel: 'alternate', hreflang: t.inLanguage }, { href: t.url });
                 });
             }
 
-            // --- 5. RELATED LINKS (rel=alternate + type) ---
             if (data.relatedLink) {
                 data.relatedLink.forEach(r => {
-                    // Ici on identifie par le couple rel + type (ex: RSS vs PDF)
                     this.upsert('link', { rel: r.rel || 'related', type: r.encodingFormat }, { 
-                        href: r.url, 
-                        title: r.name, 
-                        integrity: r.integrity 
+                        href: r.url, title: r.name, integrity: r.integrity 
                     });
                 });
             }
 
-            // --- 6. LEGACY LINKS (Sélecteurs complexes) ---
             if (data.legacyLinks) {
                 data.legacyLinks.forEach(l => {
-                    // Pour le fallback, on identifie par rel ET href si nécessaire
-                    const selector = { rel: l.rel };
-                    if (l.sizes) selector.sizes = l.sizes;
-                    if (l.hreflang) selector.hreflang = l.hreflang;
-                    
-                    this.upsert('link', selector, l);
+                    const idAttrs = { rel: l.rel };
+                    if (l.sizes) idAttrs.sizes = l.sizes;
+                    if (l.hreflang) idAttrs.hreflang = l.hreflang;
+                    if (l.type && !l.sizes) idAttrs.type = l.type; // Pour différencier RSS/Atom par ex.
+
+                    this.upsert('link', idAttrs, l);
                 });
             }
 
-            // SWEEP: Suppression des orphelins
+            // SWEEP
             this.managedNodes.forEach((node, key) => {
                 if (node._toBeRemoved) {
                     node.remove();
@@ -107,13 +136,7 @@ console.info("[AriaML] WebPage extracted :", data)
             });
         },
 
-        /**
-         * @param {string} tag - 'meta' ou 'link'
-         * @param {object} idAttrs - Attributs servant d'identifiant unique (ex: {name: 'robots'})
-         * @param {object} allAttrs - Tous les attributs à appliquer
-         */
         upsert(tag, idAttrs, allAttrs) {
-            // Construction du sélecteur CSS pour trouver la balise existante
             const attrSelectors = Object.entries(idAttrs)
                 .map(([k, v]) => `[${k}="${v}"]`)
                 .join('');
@@ -123,12 +146,10 @@ console.info("[AriaML] WebPage extracted :", data)
 
             if (!el) {
                 el = document.createElement(tag);
-                // On applique les IDs immédiatement pour qu'il soit trouvable au prochain tour
                 for (const [k, v] of Object.entries(idAttrs)) el.setAttribute(k, v);
                 document.head.appendChild(el);
             }
 
-            // Mise à jour de tous les attributs fournis
             const finalAttrs = { ...idAttrs, ...allAttrs };
             for (const [k, v] of Object.entries(finalAttrs)) {
                 if (v !== undefined && el.getAttribute(k) !== String(v)) {
