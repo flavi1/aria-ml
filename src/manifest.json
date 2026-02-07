@@ -3,6 +3,11 @@
     "name": "AriaML Engine",
     "version": "1.4",
     "description": "Standard AriaML",
+	"icons": {
+		"48": "icon/48.png",
+		"96": "icon/96.png",
+		"300": "icon/300.png"
+	},
     "permissions": [
         "declarativeNetRequest",
         "scripting",
