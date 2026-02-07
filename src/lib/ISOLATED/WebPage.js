@@ -13,26 +13,58 @@
 
             this.parse();
 
-            const observer = new MutationObserver(() => this.parse());
+            // OBSERVATEUR FILTRÉ
+            const observer = new MutationObserver((mutations) => {
+                let needsParse = false;
+
+                for (const m of mutations) {
+                    // 1. Détection des ajouts/suppressions de balises <script>
+                    if (m.type === 'childList') {
+                        const checkNodes = (nodes) => {
+                            for (const n of nodes) {
+                                if (n.nodeName === 'SCRIPT' && n.type === 'application/ld+json') return true;
+                            }
+                            return false;
+                        };
+                        if (checkNodes(m.addedNodes) || checkNodes(m.removedNodes)) {
+                            needsParse = true;
+                            break;
+                        }
+                    }
+                    // 2. Détection de la modification du contenu d'un script JSON-LD existant
+                    else if (m.type === 'characterData') {
+                        const parent = m.target.parentElement;
+                        if (parent && parent.nodeName === 'SCRIPT' && parent.type === 'application/ld+json') {
+                            needsParse = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (needsParse) {
+                    console.info("[AriaML] Change detected in JSON-LD, reparsing...");
+                    this.parse();
+                }
+            });
+
+            // On observe le document entier, mais de façon très ciblée
             observer.observe(document.documentElement, {
                 childList: true,
                 subtree: true,
-                characterData: true
+                characterData: true // Requis pour détecter le changement de texte interne
             });
         },
 
-        /**
-         * Parcourt et fusionne tous les blocs JSON-LD pertinents
-         */
         parse() {
             const scripts = document.querySelectorAll('script[type="application/ld+json"]');
             let masterData = {};
 
             scripts.forEach(s => {
                 try {
-                    const json = JSON.parse(s.textContent);
+                    const content = s.textContent.trim();
+                    if (!content) return;
                     
-                    // Détection plus souple du contexte AriaML ou du type WebPage
+                    const json = JSON.parse(content);
                     const contextStr = JSON.stringify(json['@context'] || "");
                     const isAriaML = contextStr.includes("ariaml.com/ns/");
                     const isWebPage = json['@type'] === 'WebPage';
@@ -40,33 +72,24 @@
                     if (isWebPage || isAriaML) {
                         masterData = this.deepMerge(masterData, json);
                     }
-                } catch (e) {
-                    console.error("[AriaML] JSON Error:", e);
-                }
+                } catch (e) {}
             });
 
-            console.info("[AriaML] WebPage Data Merged:", masterData);
             this.sync(masterData);
         },
 
-        /**
-         * Fusionne les objets (metadatas, properties) et concatène les listes
-         */
         deepMerge(target, source) {
             for (const key in source) {
                 const sVal = source[key];
                 const tVal = target[key];
 
                 if (Array.isArray(sVal)) {
-                    // Pour les listes (workTranslation, relatedLink, legacyLinks), on concatène
-                    target[key] = Array.isArray(tVal) ? tVal.concat(sVal) : sVal;
+                    target[key] = Array.isArray(tVal) ? tVal.concat(sVal) : [...sVal];
                 } 
                 else if (sVal !== null && typeof sVal === 'object' && !Array.isArray(sVal)) {
-                    // Pour les dictionnaires (metadatas, properties), on fusionne les clés
                     target[key] = this.deepMerge(tVal || {}, sVal);
                 } 
                 else {
-                    // Valeur simple (name, url, csrfToken), la dernière l'emporte
                     target[key] = sVal;
                 }
             }
@@ -76,14 +99,14 @@
         sync(data) {
             this.managedNodes.forEach(node => node._toBeRemoved = true);
 
-            // --- 1. GLOBALS ---
+            // GLOBALS
             if (data.name) document.title = data.name;
             if (data.direction) document.documentElement.dir = data.direction;
             if (data.inLanguage) document.documentElement.lang = data.inLanguage;
             if (data.url) this.upsert('link', { rel: 'canonical' }, { href: data.url });
             if (data.csrfToken) this.upsert('meta', { name: 'csrf-token' }, { content: data.csrfToken });
 
-            // --- 2. METADATAS ---
+            // DICTIONARIES
             if (data.metadatas) {
                 for (const [name, content] of Object.entries(data.metadatas)) {
                     if (this.linkSingletons.includes(name)) {
@@ -94,14 +117,13 @@
                 }
             }
 
-            // --- 3. PROPERTIES ---
             if (data.properties) {
                 for (const [prop, val] of Object.entries(data.properties)) {
                     this.upsert('meta', { property: prop }, { content: val });
                 }
             }
 
-            // --- 4. LISTES (Traductions, Related, Legacy) ---
+            // LISTS
             if (data.workTranslation) {
                 data.workTranslation.forEach(t => {
                     this.upsert('link', { rel: 'alternate', hreflang: t.inLanguage }, { href: t.url });
@@ -121,8 +143,7 @@
                     const idAttrs = { rel: l.rel };
                     if (l.sizes) idAttrs.sizes = l.sizes;
                     if (l.hreflang) idAttrs.hreflang = l.hreflang;
-                    if (l.type && !l.sizes) idAttrs.type = l.type; // Pour différencier RSS/Atom par ex.
-
+                    if (l.type && !l.sizes) idAttrs.type = l.type;
                     this.upsert('link', idAttrs, l);
                 });
             }
