@@ -29,11 +29,12 @@
             scripts.forEach(s => {
                 try {
                     const json = JSON.parse(s.textContent);
-                    if (json['@type'] === 'WebPage' || (json['@context'] && JSON.stringify(json['@context']).includes('ariaml'))) {
+                    if (json['@type'] === 'WebPage' || (json['@context'] && JSON.stringify(json['@context']).includes('"https://ariaml.com/ns/"'))) {
                         data = Object.assign(data, json);
                     }
                 } catch (e) {}
             });
+console.info("[AriaML] WebPage extracted :", data)
             this.sync(data);
         },
 
