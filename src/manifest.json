@@ -67,7 +67,6 @@
 					
 					"lib/ISOLATED/AriaMLAttributeSync.js",
 					"lib/ISOLATED/WebPage.js",
-					// "lib/PageProperties.Proxy.js",
 					
 					"lib/ISOLATED/ThemeManager.js",
 					"lib/ISOLATED/AppearanceManager.js",
