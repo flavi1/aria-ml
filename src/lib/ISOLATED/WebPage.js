@@ -18,7 +18,6 @@
                 let needsParse = false;
 
                 for (const m of mutations) {
-                    // 1. Détection des ajouts/suppressions de balises <script>
                     if (m.type === 'childList') {
                         const checkNodes = (nodes) => {
                             for (const n of nodes) {
@@ -31,7 +30,6 @@
                             break;
                         }
                     }
-                    // 2. Détection de la modification du contenu d'un script JSON-LD existant
                     else if (m.type === 'characterData') {
                         const parent = m.target.parentElement;
                         if (parent && parent.nodeName === 'SCRIPT' && parent.type === 'application/ld+json') {
@@ -47,11 +45,10 @@
                 }
             });
 
-            // On observe le document entier, mais de façon très ciblée
             observer.observe(document.documentElement, {
                 childList: true,
                 subtree: true,
-                characterData: true // Requis pour détecter le changement de texte interne
+                characterData: true 
             });
         },
 
@@ -66,7 +63,7 @@
                     
                     const json = JSON.parse(content);
                     const contextStr = JSON.stringify(json['@context'] || "");
-                    const isAriaML = contextStr.includes("ariaml.com/ns/");
+                    const isAriaML = contextStr.includes("https://ariaml.com/ns/");
                     const isWebPage = json['@type'] === 'WebPage';
 
                     if (isWebPage || isAriaML) {
@@ -124,8 +121,22 @@
             }
 
             // LISTS
+            
+            // 1. Gestion de translationOfWork (Original)
+            if (data.translationOfWork) {
+                const translations = Array.isArray(data.translationOfWork) ? data.translationOfWork : [data.translationOfWork];
+                translations.forEach(t => {
+                    this.upsert('link', 
+                        { rel: 'alternate', hreflang: t.inLanguage, class: 'translationOfWork' }, 
+                        { href: t.url }
+                    );
+                });
+            }
+
+            // 2. Gestion de workTranslation (Traductions)
             if (data.workTranslation) {
-                data.workTranslation.forEach(t => {
+                const translations = Array.isArray(data.workTranslation) ? data.workTranslation : [data.workTranslation];
+                translations.forEach(t => {
                     this.upsert('link', { rel: 'alternate', hreflang: t.inLanguage }, { href: t.url });
                 });
             }
