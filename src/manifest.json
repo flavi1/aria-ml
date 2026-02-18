@@ -66,7 +66,7 @@
 					"lib/RootNode.js",
 					
 					"lib/ISOLATED/AriaMLAttributeSync.js",
-					"lib/ISOLATED/WebPage.js",
+					"lib/ISOLATED/Document.js",
 					
 					"lib/ISOLATED/ThemeManager.js",
 					"lib/ISOLATED/AppearanceManager.js",

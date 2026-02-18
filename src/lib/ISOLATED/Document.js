@@ -1,5 +1,5 @@
 (function() {
-    const AriaMLWebPage = {
+    const AriaMLDocument = {
         linkSingletons: ['shortlink', 'canonical', 'author', 'license', 'me'],
         managedNodes: new Map(),
 
@@ -52,36 +52,36 @@
             });
         },
 
-		parse() {
-			const scripts = document.querySelectorAll('script[type="application/ld+json"]');
-			let masterData = {};
+        parse() {
+            const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+			const authorizedTypes = ['Article', 'WebPage', 'DigitalDocument', 'SoftwareApplication'];
+            let masterData = {};
 
-			scripts.forEach(s => {
-				try {
-					const content = s.textContent.trim();
-					if (!content) return;
-					
-					const json = JSON.parse(content);
-					const contextStr = JSON.stringify(json['@context'] || "");
-					const isAriaML = contextStr.includes("https://ariaml.com/ns/");
-					const isWebPage = json['@type'] === 'WebPage';
-					
-					// On vérifie si le bloc cible le document courant (pas d'ID ou ID relatif vide)
-					const isRootNode = !json['@id'] || json['@id'] === "" || json['@id'] === "#";
+            scripts.forEach(s => {
+                try {
+                    const content = s.textContent.trim();
+                    if (!content) return;
+                    
+                    const json = JSON.parse(content);
+                    const contextStr = JSON.stringify(json['@context'] || "");
+                    const isAriaML = contextStr.includes("https://ariaml.com/ns/");
+                    
+                    const isCreativeWork = authorizedTypes.includes(json['@type'])
+                    
+                    // Cible le document courant (root node)
+                    const isRootNode = !json['@id'] || json['@id'] === "" || json['@id'] === "#";
 
-					// Si c'est un bloc WebPage racine ou un bloc AriaML, on l'ajoute à la synthèse
-					if ((isWebPage && isRootNode) || isAriaML) {
-						// On fusionne les propriétés dans masterData
-						// deepMerge s'occupe de cumuler les tableaux (ex: workTranslation)
-						masterData = this.deepMerge(masterData, json);
-					}
-				} catch (e) {
-					console.warn("[AriaML] Invalid JSON-LD block skipped.", e);
-				}
-			});
+                    if ((isCreativeWork && isRootNode) || isAriaML) {
+                        // Synthèse additive des propriétés
+                        masterData = this.deepMerge(masterData, json);
+                    }
+                } catch (e) {
+                    console.warn("[AriaML] Invalid JSON-LD block skipped.", e);
+                }
+            });
 
-			this.sync(masterData);
-		},
+            this.sync(masterData);
+        },
 
         deepMerge(target, source) {
             for (const key in source) {
@@ -122,7 +122,7 @@
                 }
             }
 
-            if (data.properties) {
+            if (data.properties) {const isCreativeWork = 
                 for (const [prop, val] of Object.entries(data.properties)) {
                     this.upsert('meta', { property: prop }, { content: val });
                 }
@@ -202,7 +202,7 @@
         }
     };
 
-    if (document.readyState === 'complete') AriaMLWebPage.init();
-    else window.addEventListener('DOMContentLoaded', () => AriaMLWebPage.init());
-    window.AriaMLWebPage = AriaMLWebPage;
+    if (document.readyState === 'complete') AriaMLDocument.init();
+    else window.addEventListener('DOMContentLoaded', () => AriaMLDocument.init());
+    window.AriaMLDocument = AriaMLDocument;
 })();
