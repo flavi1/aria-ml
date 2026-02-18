@@ -1,22 +1,18 @@
 (function() {
     const AriaMLDocument = {
-        linkSingletons: ['shortlink', 'canonical', 'author', 'license', 'me'],
+        linkSingletons: ['author', 'license'], // Identifiés par Schema.org à la racine
         managedNodes: new Map(),
 
         init() {
-            // Force UTF-8 immédiat
             if (!document.querySelector('meta[charset]')) {
                 const charset = document.createElement('meta');
                 charset.setAttribute('charset', 'UTF-8');
                 document.head.prepend(charset);
             }
-
             this.parse();
 
-            // OBSERVATEUR FILTRÉ
             const observer = new MutationObserver((mutations) => {
                 let needsParse = false;
-
                 for (const m of mutations) {
                     if (m.type === 'childList') {
                         const checkNodes = (nodes) => {
@@ -38,7 +34,6 @@
                         }
                     }
                 }
-
                 if (needsParse) {
                     console.info("[AriaML] Change detected in JSON-LD, reparsing...");
                     this.parse();
@@ -54,25 +49,20 @@
 
         parse() {
             const scripts = document.querySelectorAll('script[type="application/ld+json"]');
-			const authorizedTypes = ['Article', 'WebPage', 'DigitalDocument', 'SoftwareApplication'];
+            const authorizedTypes = ['Article', 'WebPage', 'DigitalDocument', 'SoftwareApplication'];
             let masterData = {};
 
             scripts.forEach(s => {
                 try {
                     const content = s.textContent.trim();
                     if (!content) return;
-                    
                     const json = JSON.parse(content);
                     const contextStr = JSON.stringify(json['@context'] || "");
-                    const isAriaML = contextStr.includes("https://ariaml.com/ns/");
-                    
-                    const isCreativeWork = authorizedTypes.includes(json['@type'])
-                    
-                    // Cible le document courant (root node)
+                    const isAriaML = contextStr.includes("[https://ariaml.com/ns/](https://ariaml.com/ns/)");
+                    const isAuthorized = authorizedTypes.includes(json['@type']);
                     const isRootNode = !json['@id'] || json['@id'] === "" || json['@id'] === "#";
 
-                    if ((isCreativeWork && isRootNode) || isAriaML) {
-                        // Synthèse additive des propriétés
+                    if ((isAuthorized && isRootNode) || isAriaML) {
                         masterData = this.deepMerge(masterData, json);
                     }
                 } catch (e) {
@@ -87,7 +77,6 @@
             for (const key in source) {
                 const sVal = source[key];
                 const tVal = target[key];
-
                 if (Array.isArray(sVal)) {
                     target[key] = Array.isArray(tVal) ? tVal.concat(sVal) : [...sVal];
                 } 
@@ -104,50 +93,54 @@
         sync(data) {
             this.managedNodes.forEach(node => node._toBeRemoved = true);
 
-            // GLOBALS
+            // 1. GLOBALS (Mapping direct racine)
             if (data.name) document.title = data.name;
             if (data.direction) document.documentElement.dir = data.direction;
             if (data.inLanguage) document.documentElement.lang = data.inLanguage;
+            if (data.description) this.upsert('meta', { name: 'description' }, { content: data.description });
             if (data.url) this.upsert('link', { rel: 'canonical' }, { href: data.url });
             if (data.csrfToken) this.upsert('meta', { name: 'csrf-token' }, { content: data.csrfToken });
 
-            // DICTIONARIES
+            // 2. LINK SINGLETONS (author, license à la racine)
+            this.linkSingletons.forEach(key => {
+                if (data[key]) {
+                    const href = (typeof data[key] === 'object') ? data[key].url : data[key];
+                    if (href) this.upsert('link', { rel: key }, { href: href });
+                }
+            });
+
+            // 3. IDENTITÉ SAMEAS (Équivalent rel="me")
+            if (data.author && data.author.sameAs) {
+                const links = Array.isArray(data.author.sameAs) ? data.author.sameAs : [data.author.sameAs];
+                links.forEach(url => this.upsert('link', { rel: 'me' }, { href: url }));
+            }
+
+            // 4. DICTIONNAIRES (metadatas & properties)
             if (data.metadatas) {
                 for (const [name, content] of Object.entries(data.metadatas)) {
-                    if (this.linkSingletons.includes(name)) {
-                        this.upsert('link', { rel: name }, { href: content });
-                    } else {
-                        this.upsert('meta', { name: name }, { content: content });
-                    }
+                    this.upsert('meta', { name: name }, { content: content });
                 }
             }
 
-            if (data.properties) {const isCreativeWork = 
+            if (data.properties) {
                 for (const [prop, val] of Object.entries(data.properties)) {
                     this.upsert('meta', { property: prop }, { content: val });
                 }
             }
 
-            // LISTS
-            
-            // 1. Gestion de translationOfWork (Original)
-            if (data.translationOfWork) {
-                const translations = Array.isArray(data.translationOfWork) ? data.translationOfWork : [data.translationOfWork];
-                translations.forEach(t => {
-                    this.upsert('link', 
-                        { rel: 'alternate', hreflang: t.inLanguage, class: 'translationOfWork' }, 
-                        { href: t.url }
-                    );
+            // 5. LISTES (Traductions, Relations, Legacy)
+            const syncList = (list, rel, isOriginal) => {
+                if (!list) return;
+                const items = Array.isArray(list) ? list : [list];
+                items.forEach(t => {
+                    const attrs = { rel: rel, hreflang: t.inLanguage };
+                    if (isOriginal) attrs.class = 'translationOfWork';
+                    this.upsert('link', attrs, { href: t.url });
                 });
-            }
+            };
 
-            // 2. Gestion de workTranslation (Traductions)
-            if (data.workTranslation) {
-                const translations = Array.isArray(data.workTranslation) ? data.workTranslation : [data.workTranslation];
-                translations.forEach(t => {
-                    this.upsert('link', { rel: 'alternate', hreflang: t.inLanguage }, { href: t.url });
-                });
-            }
+            syncList(data.translationOfWork, 'alternate', true);
+            syncList(data.workTranslation, 'alternate', false);
 
             if (data.relatedLink) {
                 data.relatedLink.forEach(r => {
@@ -183,7 +176,6 @@
             const selector = `${tag}${attrSelectors}`;
             
             let el = document.head.querySelector(selector);
-
             if (!el) {
                 el = document.createElement(tag);
                 for (const [k, v] of Object.entries(idAttrs)) el.setAttribute(k, v);
