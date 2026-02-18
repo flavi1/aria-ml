@@ -1,6 +1,6 @@
 (function() {
     const AriaMLDocument = {
-        linkSingletons: ['author', 'license'], // Identifiés par Schema.org à la racine
+        linkSingletons: ['author', 'license'], 
         managedNodes: new Map(),
 
         init() {
@@ -93,7 +93,7 @@
         sync(data) {
             this.managedNodes.forEach(node => node._toBeRemoved = true);
 
-            // 1. GLOBALS (Mapping direct racine)
+            // 1. GLOBALS
             if (data.name) document.title = data.name;
             if (data.direction) document.documentElement.dir = data.direction;
             if (data.inLanguage) document.documentElement.lang = data.inLanguage;
@@ -101,7 +101,7 @@
             if (data.url) this.upsert('link', { rel: 'canonical' }, { href: data.url });
             if (data.csrfToken) this.upsert('meta', { name: 'csrf-token' }, { content: data.csrfToken });
 
-            // 2. LINK SINGLETONS (author, license à la racine)
+            // 2. LINK SINGLETONS
             this.linkSingletons.forEach(key => {
                 if (data[key]) {
                     const href = (typeof data[key] === 'object') ? data[key].url : data[key];
@@ -109,25 +109,26 @@
                 }
             });
 
-            // 3. DICTIONNAIRES (metadatas & properties)
+            // 3. DICTIONNAIRES
             if (data.metadatas) {
                 for (const [name, content] of Object.entries(data.metadatas)) {
                     this.upsert('meta', { name: name }, { content: content });
                 }
             }
-
             if (data.properties) {
                 for (const [prop, val] of Object.entries(data.properties)) {
                     this.upsert('meta', { property: prop }, { content: val });
                 }
             }
 
-            // 4. LISTES (Traductions, Relations, Legacy)
+            // 4. LISTES TECHNIQUES (Traductions & Legacy uniquement)
             const syncList = (list, rel, isOriginal) => {
                 if (!list) return;
                 const items = Array.isArray(list) ? list : [list];
                 items.forEach(t => {
-                    const attrs = { rel: rel, hreflang: t.inLanguage };
+                    if (!t.url) return;
+                    const attrs = { rel: rel };
+                    if (t.inLanguage) attrs.hreflang = t.inLanguage;
                     if (isOriginal) attrs.class = 'translationOfWork';
                     this.upsert('link', attrs, { href: t.url });
                 });
@@ -136,20 +137,14 @@
             syncList(data.translationOfWork, 'alternate', true);
             syncList(data.workTranslation, 'alternate', false);
 
-            if (data.relatedLink) {
-                data.relatedLink.forEach(r => {
-                    this.upsert('link', { rel: r.rel || 'related', type: r.encodingFormat }, { 
-                        href: r.url, title: r.name, integrity: r.integrity 
-                    });
-                });
-            }
-
+            // LEGACY LINKS (Usage : RSS, Identité, Favicons...)
             if (data.legacyLinks) {
                 data.legacyLinks.forEach(l => {
-                    const idAttrs = { rel: l.rel };
+                    const idAttrs = { rel: l.rel || 'alternate' };
                     if (l.sizes) idAttrs.sizes = l.sizes;
                     if (l.hreflang) idAttrs.hreflang = l.hreflang;
                     if (l.type && !l.sizes) idAttrs.type = l.type;
+                    // On utilise l'objet l complet comme source d'attributs
                     this.upsert('link', idAttrs, l);
                 });
             }
@@ -178,7 +173,7 @@
 
             const finalAttrs = { ...idAttrs, ...allAttrs };
             for (const [k, v] of Object.entries(finalAttrs)) {
-                if (v !== undefined && el.getAttribute(k) !== String(v)) {
+                if (v !== undefined && k !== 'rel' && el.getAttribute(k) !== String(v)) {
                     el.setAttribute(k, v);
                 }
             }
