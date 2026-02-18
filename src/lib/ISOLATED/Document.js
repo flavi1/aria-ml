@@ -58,7 +58,7 @@
                     if (!content) return;
                     const json = JSON.parse(content);
                     const contextStr = JSON.stringify(json['@context'] || "");
-                    const isAriaML = contextStr.includes("[https://ariaml.com/ns/](https://ariaml.com/ns/)");
+                    const isAriaML = contextStr.includes("https://ariaml.com/ns/");
                     const isAuthorized = authorizedTypes.includes(json['@type']);
                     const isRootNode = !json['@id'] || json['@id'] === "" || json['@id'] === "#";
 
@@ -109,13 +109,7 @@
                 }
             });
 
-            // 3. IDENTITÉ SAMEAS (Équivalent rel="me")
-            if (data.author && data.author.sameAs) {
-                const links = Array.isArray(data.author.sameAs) ? data.author.sameAs : [data.author.sameAs];
-                links.forEach(url => this.upsert('link', { rel: 'me' }, { href: url }));
-            }
-
-            // 4. DICTIONNAIRES (metadatas & properties)
+            // 3. DICTIONNAIRES (metadatas & properties)
             if (data.metadatas) {
                 for (const [name, content] of Object.entries(data.metadatas)) {
                     this.upsert('meta', { name: name }, { content: content });
@@ -128,7 +122,7 @@
                 }
             }
 
-            // 5. LISTES (Traductions, Relations, Legacy)
+            // 4. LISTES (Traductions, Relations, Legacy)
             const syncList = (list, rel, isOriginal) => {
                 if (!list) return;
                 const items = Array.isArray(list) ? list : [list];
