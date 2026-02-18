@@ -52,28 +52,36 @@
             });
         },
 
-        parse() {
-            const scripts = document.querySelectorAll('script[type="application/ld+json"]');
-            let masterData = {};
+		parse() {
+			const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+			let masterData = {};
 
-            scripts.forEach(s => {
-                try {
-                    const content = s.textContent.trim();
-                    if (!content) return;
-                    
-                    const json = JSON.parse(content);
-                    const contextStr = JSON.stringify(json['@context'] || "");
-                    const isAriaML = contextStr.includes("https://ariaml.com/ns/");
-                    const isWebPage = json['@type'] === 'WebPage';
+			scripts.forEach(s => {
+				try {
+					const content = s.textContent.trim();
+					if (!content) return;
+					
+					const json = JSON.parse(content);
+					const contextStr = JSON.stringify(json['@context'] || "");
+					const isAriaML = contextStr.includes("https://ariaml.com/ns/");
+					const isWebPage = json['@type'] === 'WebPage';
+					
+					// On vérifie si le bloc cible le document courant (pas d'ID ou ID relatif vide)
+					const isRootNode = !json['@id'] || json['@id'] === "" || json['@id'] === "#";
 
-                    if (isWebPage || isAriaML) {
-                        masterData = this.deepMerge(masterData, json);
-                    }
-                } catch (e) {}
-            });
+					// Si c'est un bloc WebPage racine ou un bloc AriaML, on l'ajoute à la synthèse
+					if ((isWebPage && isRootNode) || isAriaML) {
+						// On fusionne les propriétés dans masterData
+						// deepMerge s'occupe de cumuler les tableaux (ex: workTranslation)
+						masterData = this.deepMerge(masterData, json);
+					}
+				} catch (e) {
+					console.warn("[AriaML] Invalid JSON-LD block skipped.", e);
+				}
+			});
 
-            this.sync(masterData);
-        },
+			this.sync(masterData);
+		},
 
         deepMerge(target, source) {
             for (const key in source) {
