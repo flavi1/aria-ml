@@ -1,50 +1,47 @@
 /**
  * ThemeManager.js
- * Gère l'état du thème et la persistance des préférences utilisateur.
+ * Gère l'intention thématique et la persistance utilisateur.
  */
 (function() {
     const ThemeManager = {
         activeName: null,
-        config: null,
         storageKey: 'ariaml_user_theme',
+
         init: function() {
-            const savedTheme = localStorage.getItem(this.storageKey);
-            if (savedTheme) {
-                this.activeName = savedTheme;
-            }
+            // Récupération de la préférence manuelle
+            this.activeName = localStorage.getItem(this.storageKey);
         },
 
-        updateConfig: function(data) {
-            this.config = data;
-            if (!this.activeName) {
-                this.activeName = this.resolveAutoTheme();
-            }
-        },
-
-        resolveAutoTheme: function() {
-            if (!this.config || !this.config.themeList) return null;
-            const list = this.config.themeList;
-            
-            for (const [name, theme] of Object.entries(list)) {
-                // Si theme est une string (URL déportée), on ne peut pas tester media 
-                // avant chargement, sauf si media est défini au premier niveau (optionnel)
-                if (theme.media && window.matchMedia(theme.media).matches) {
-                    return name;
-                }
-            }
-            return this.config.defaultTheme;
-        },
-
+        /**
+         * Définit manuellement le thème.
+         * Passer 'null' pour revenir au mode "Automatique".
+         */
         setTheme: async function(name) {
-            if (this.config.themeList[name]) {
-                this.activeName = name;
+            this.activeName = name;
+            if (name) {
                 localStorage.setItem(this.storageKey, name);
-                
-                if (window.AppearanceManager) {
-                    // On appelle render qui est maintenant async
-                    await window.AppearanceManager.render(this.config);
-                }
+            } else {
+                localStorage.removeItem(this.storageKey);
             }
+
+            if (window.AppearanceManager) {
+                await window.AppearanceManager.render();
+            }
+        },
+
+        /**
+         * Détermine si un thème donné doit être considéré comme actif.
+         * @param {string} themeName - Le nom du thème à tester.
+         * @param {boolean} matchesMedia - Si la media query du nœud est valide.
+         * @param {boolean} isFirstMatch - Si c'est le premier thème valide trouvé.
+         */
+        shouldActivate: function(themeName, matchesMedia, isFirstMatch) {
+            // 1. Si l'utilisateur a choisi un thème, seul celui-là gagne.
+            if (this.activeName) {
+                return themeName === this.activeName;
+            }
+            // 2. Sinon, le premier thème dont le média matche gagne (Mode Auto).
+            return matchesMedia && isFirstMatch;
         }
     };
 
