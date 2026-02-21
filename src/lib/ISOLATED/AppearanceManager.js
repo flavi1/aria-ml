@@ -175,16 +175,24 @@
 
     window.AppearanceManager = AppearanceManager;
 
-    const init = () => {
-        const target = document.querySelector('aria-ml');
-        if (target) {
-            new MutationObserver(() => AppearanceManager.render()).observe(target, { 
-                childList: true, subtree: true, attributes: true, 
-                attributeFilter: ['theme', 'media', 'src'] 
-            });
-            AppearanceManager.render();
-        }
-    };
+	const init = () => {
+		const target = document.querySelector('aria-ml');
+		const isSSR = document.head.hasAttribute('data-ssr');
+
+		if (target) {
+			new MutationObserver(() => AppearanceManager.render()).observe(target, { 
+				childList: true, subtree: true, attributes: true, 
+				attributeFilter: ['theme', 'media', 'src'] 
+			});
+
+			// Si SSR, on considère que le premier rendu est valide.
+			// On n'exécute render() immédiatement que si ce n'est PAS du SSR
+			// ou si le fragment a été injecté dynamiquement.
+			if (!isSSR || target.tagName === 'ARIA-ML-FRAGMENT') {
+				AppearanceManager.render();
+			}
+		}
+	};
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
     else init();

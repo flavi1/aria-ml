@@ -4,13 +4,31 @@
         managedNodes: new Map(),
         _observer: null,
 
-        init() {
-            if (!document.querySelector('meta[charset]')) {
-                const charset = document.createElement('meta');
-                charset.setAttribute('charset', 'UTF-8');
-                document.head.prepend(charset);
-            }
-            this.parse();
+	init() {
+		const isSSR = document.head.hasAttribute('data-ssr');
+		
+		// Si SSR, on indexe l'existant pour que upsert() sache qu'ils sont déjà là
+		if (isSSR) {
+			document.querySelectorAll('head meta, head link').forEach(el => {
+				const tag = el.tagName.toLowerCase();
+				const idAttrs = {};
+				if (el.hasAttribute('name')) idAttrs.name = el.getAttribute('name');
+				if (el.hasAttribute('property')) idAttrs.property = el.getAttribute('property');
+				if (el.hasAttribute('rel')) idAttrs.rel = el.getAttribute('rel');
+				
+				// CORRECTION: Échappement des guillemets pour cohérence avec upsert()
+				const selector = tag + Object.entries(idAttrs)
+					.map(([k, v]) => `[${k}="${String(v).replace(/"/g, '\\"')}"]`).join('');
+				
+				this.managedNodes.set(selector, el);
+			});
+		} else if (!document.querySelector('meta[charset]')) {
+			const charset = document.createElement('meta');
+			charset.setAttribute('charset', 'UTF-8');
+			document.head.prepend(charset);
+		}
+
+		this.parse(); // Le premier parse trouvera les éléments dans managedNodes et ne fera rien
 
             this._observer = new MutationObserver((mutations) => {
                 let needsParse = false;
