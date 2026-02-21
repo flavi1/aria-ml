@@ -222,19 +222,50 @@ class AriaMLNavigation {
             el.removeAttribute('inert');
         });
 
-		const manageFocus = (container) => {
-            const auto = container.querySelector('[autofocus]');
-            const target = auto || container;
+		const findFirstFocusableTarget = (element) => {
+			const style = window.getComputedStyle(element);
 
-            if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
-            
-            // On scroll d'abord pour le cadrage, puis on focus.
-            // Le navigateur utilisera scroll-behavior défini en CSS.
-            target.scrollIntoView({ block: 'start' });
-            target.focus({ preventScroll: true }); 
+			if (style.display === 'none' || style.visibility === 'hidden') return null;
+
+			if (style.display === 'contents') {
+				for (const child of element.children) {
+					const target = findFirstFocusableTarget(child);
+					if (target) return target;
+				}
+				return null;
+			}
+
+			if (element.offsetWidth > 0 || element.getClientRects().length > 0) {
+				return element;
+			}
+
+			return null;
+		};
+
+		const manageFocus = (targetSlots) => {
+			let finalTarget = null;
+
+			for (const slot of targetSlots) {
+				const auto = slot.querySelector('[autofocus]');
+				if (auto) finalTarget = findFirstFocusableTarget(auto);
+				if (!finalTarget) finalTarget = findFirstFocusableTarget(slot);
+				if (finalTarget) break;
+			}
+
+			// --- Application du focus ---
+			if (finalTarget) {
+				const isNativeFocusable = /^(INPUT|SELECT|TEXTAREA|BUTTON|A|AREA)$/.test(finalTarget.tagName);
+				const addedTabindex = !isNativeFocusable && !finalTarget.hasAttribute('tabindex');
+				if (addedTabindex) finalTarget.setAttribute('tabindex', '-1');
+
+				finalTarget.scrollIntoView({ block: 'start' });
+				finalTarget.focus({ preventScroll: true });
+
+				if (addedTabindex) finalTarget.removeAttribute('tabindex');
+			}
         };
 
-        if (targetSlots.length > 0) manageFocus(targetSlots[0]);
+        if (targetSlots.length > 0) manageFocus(targetSlots);
         
 		// Dispatch de l'événement sémantique
         document.dispatchEvent(new CustomEvent('current-change', {
