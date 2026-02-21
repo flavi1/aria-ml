@@ -1,232 +1,229 @@
 /**
  * AppearanceManager.js
- * Orchestrateur du rendu visuel : génère les assets, thèmes, couleurs et viewport.
- * Supporte : JSON inline, URL via src, et thèmes déportés (URLs/base64).
+ * Synchronisation réactive AriaML (v1.6.3)
+ * Gère le rendu, le nettoyage des classes volatiles et la synchro système.
  */
 (function() {
     const AppearanceManager = {
         isUpdating: false,
-        _jsonCache: {}, // Cache interne pour éviter les fetch répétitifs
-        _appliedVolatiles: new Map(),
+        _jsonCache: new Map(), // Cache pour les ressources distantes (fetch)
         
-        // Méthode utilitaire pour charger du JSON (URL, relatif ou data:base64)
-        fetchExternalJson: async function(url) {
-            if (this._jsonCache[url]) return this._jsonCache[url];
-            try {
-                const response = await fetch(url);
-                const json = await response.json();
-                this._jsonCache[url] = json;
-                return json;
-            } catch (e) {
-                console.error("AriaML Appearance: Erreur de chargement", url, e);
-                return null;
-            }
+        JSON_TYPES: {
+            VOLATILE: ['volatile-classes+json', 'application/volatile-classes+json'],
+            ICONS: ['icons+json', 'application/icons+json']
         },
 
-		render: async function(data) {
-            if (typeof data === 'string') data = await this.fetchExternalJson(data);
-            if (!data || this.isUpdating) return;
+        /**
+         * Point d'entrée principal du rendu.
+         * Appelé par le ThemeManager ou par l'Observer.
+         */
+        render: async function() {
+            if (this.isUpdating) return;
             this.isUpdating = true;
 
-            const tracker = new Set();
-            this.clearVolatiles(); // On nettoie tout avant de ré-appliquer
-
-            // 1. Assets persistants
-            if (Array.isArray(data.assets)) {
-                data.assets.forEach(asset => this.syncLink(asset, tracker, true));
+            const root = document.querySelector('aria-ml');
+            if (!root) {
+                this.isUpdating = false;
+                return;
             }
 
-            // 2. Gestion des Thèmes
-            let activeThemeData = null;
-            if (data.themeList && window.ThemeManager) {
-                window.ThemeManager.updateConfig(data);
-                const activeName = window.ThemeManager.activeName;
+            const activeTheme = window.ThemeManager?.activeName;
+            const styleNodes = Array.from(root.querySelectorAll('style'));
+
+            for (const s of styleNodes) {
+                const { theme, conflict } = this.getThemeContext(s);
                 
-                for (let [themeName, themeConfig] of Object.entries(data.themeList)) {
-                    if (typeof themeConfig === 'string') {
-                        themeConfig = await this.fetchExternalJson(themeConfig);
-                        data.themeList[themeName] = themeConfig;
-                    }
-                    if (!themeConfig) continue;
-
-                    const isActive = (themeName === activeName);
-                    if (isActive) activeThemeData = themeConfig;
-
-                    if (Array.isArray(themeConfig.assets)) {
-                        themeConfig.assets.forEach(asset => {
-                            this.syncLink({ ...asset, title: themeName }, tracker, isActive);
-                        });
-                    }
+                // 1. Arbitrage des conflits de thèmes (Confinement)
+                if (conflict) {
+                    s.disabled = true;
+                    console.warn("AriaML: Confusion de thème sur", s);
+                    continue;
                 }
-                this.syncBrowserColor(data, activeName);
-                this.syncViewport(data, activeName);
+
+                // 2. Évaluation des conditions d'activation
+                const themeActive = !theme || theme === activeTheme;
+                const mediaAttr = s.getAttribute('media');
+                const mediaActive = !mediaAttr || window.matchMedia(mediaAttr).matches;
+                const shouldApply = themeActive && mediaActive;
+
+                // 3. Gestion du Preload
+                if (s.hasAttribute('src') && s.hasAttribute('preload')) {
+                    this.ensurePreload(s.getAttribute('src'));
+                }
+
+                const type = s.getAttribute('type') || 'text/css';
+
+                // 4. Dispatch selon le type de ressource
+                if (this.JSON_TYPES.VOLATILE.includes(type)) {
+                    await this.handleVolatiles(s, shouldApply);
+                } 
+                else if (this.JSON_TYPES.ICONS.includes(type)) {
+                    if (shouldApply) await this.handleIcons(s);
+                } 
+                else {
+                    this.applyStyle(s, shouldApply);
+                }
             }
 
-            // 3. Application des Volatile Classes (Persistant + Thème)
-            this.applyVolatileMap(data.volatileClasses);
-            if (activeThemeData) {
-                this.applyVolatileMap(activeThemeData.volatileClasses);
-            }
-
-            this.cleanup(tracker);
+            // 5. Mise à jour des paramètres du navigateur (Viewport, Browser Color)
+            this.syncSystemParams(root);
+            
             this.isUpdating = false;
         },
 
-		/**
-         * Applique un dictionnaire de classes volatiles au DOM
+        /**
+         * Gère les utility classes volatiles.
+         * Nettoie les classes si shouldApply est false (idempotence).
          */
-        applyVolatileMap: function(map) {
-            if (!map) return;
-            Object.entries(map).forEach(([selector, classes]) => {
-                const elements = document.querySelectorAll(selector);
-                const classList = Array.isArray(classes) ? classes : [classes];
-                
-                elements.forEach(el => {
-                    classList.forEach(cls => {
-                        el.classList.add(cls);
-                        
-                        // Enregistrement pour le nettoyage futur
-                        if (!this._appliedVolatiles.has(el)) this._appliedVolatiles.set(el, new Set());
-                        this._appliedVolatiles.get(el).add(cls);
-                    });
-                });
+        handleVolatiles: async function(s, shouldApply) {
+            const data = await this.getJsonContent(s);
+            if (!data) return;
+
+            const action = shouldApply ? 'add' : 'remove';
+            
+            Object.entries(data).forEach(([selector, classes]) => {
+                const targets = document.querySelectorAll(selector);
+                const classList = Array.isArray(classes) ? classes : classes.split(/\s+/);
+                const cleanList = classList.map(c => c.trim()).filter(c => c);
+
+                if (cleanList.length > 0) {
+                    targets.forEach(t => t.classList[action](...cleanList));
+                }
             });
         },
 
         /**
-         * Supprime toutes les classes volatiles précédemment injectées
+         * Synchronise les icônes dans le <head>. 
+         * Réutilise les balises existantes (compatibilité HTML côté serveur).
          */
-        clearVolatiles: function() {
-            this._appliedVolatiles.forEach((classes, el) => {
-                if (document.contains(el)) {
-                    classes.forEach(cls => el.classList.remove(cls));
+        handleIcons: async function(s) {
+            const data = await this.getJsonContent(s);
+            if (!data) return;
+
+            Object.entries(data).forEach(([rel, href]) => {
+                let link = document.head.querySelector(`link[rel="${rel}"]`);
+                if (!link) {
+                    link = document.createElement('link');
+                    link.rel = rel;
+                    document.head.appendChild(link);
                 }
-            });
-            this._appliedVolatiles.clear();
-        },
-
-        syncLink: function(asset, tracker, isActive) {
-            if (typeof asset === 'string') {
-                asset = { rel: 'stylesheet', href: asset };
-            }
-
-            const isFF = navigator.userAgent.toLowerCase().indexOf('firefox') >= 0;
-            
-            let sel = `link[href="${asset.href}"]`;
-            let el = document.head.querySelector(sel);
-
-            if (!el) {
-                el = document.createElement('link');
-                // On applique les attributs par défaut si manquants
-                const finalRel = asset.rel || 'stylesheet';
-                
-                Object.entries(asset).forEach(([k, v]) => {
-                    if (k === 'title' && !isFF) {
-                        el.setAttribute('data-title', v);
-                    } else {
-                        el.setAttribute(k, v);
-                    }
-                });
-                
-                // Sécurité si rel n'était pas dans l'objet
-                if (!el.rel) el.rel = finalRel;
-                
-                document.head.appendChild(el);
-            }
-
-            const title = isFF ? el.getAttribute('title') : el.getAttribute('data-title');
-
-            if (title) {
-                if (!isFF) {
-                    el.removeAttribute('title');
-                    el.dataset.title = title;
-                }
-
-                // Gestion de l'alternance (Thèmes)
-                el.rel = isActive ? 'stylesheet' : 'alternate stylesheet';
-                
-                if (!isFF)
-                    el.disabled = true; // Fix Blink https://issues.chromium.org/issues/41389485 (LAISSEZ LES URLS DANS LES COMMENTAIRES SVP)
-                el.disabled = !isActive;
-
-                if (isActive) el.media = asset.media || 'all';
-            } else {
-                // Asset persistant (sans titre de thème)
-                el.disabled = false;
-                if (asset.media) el.media = asset.media;
-            }
-            
-            tracker.add(`link[href="${asset.href}"]`);
-        },
-
-        syncBrowserColor: function(data, activeName) {
-            const theme = data.themeList[activeName];
-            const color = theme?.browserColor || data.browserColor;
-            if (color) {
-                let meta = document.querySelector('meta[name="theme-color"]') || document.createElement('meta');
-                meta.name = 'theme-color';
-                meta.content = color;
-                if (!meta.parentNode) document.head.appendChild(meta);
-            }
-        },
-
-        syncViewport: function(data, activeName) {
-            const theme = data.themeList[activeName];
-            const viewportContent = theme?.viewport || data.viewport;
-            if (viewportContent) {
-                let meta = document.querySelector('meta[name="viewport"]') || document.createElement('meta');
-                meta.name = 'viewport';
-                meta.content = viewportContent;
-                if (!meta.parentNode) document.head.appendChild(meta);
-            }
-        },
-
-        cleanup: function(tracker) {
-            const links = document.head.querySelectorAll('link[rel*="stylesheet"], link[rel*="icon"]');
-            links.forEach(link => {
-                const href = link.getAttribute('href');
-                const title = link.getAttribute('title') || link.getAttribute('data-title');
-                let sel = `link[href="${href}"]`;
-                if (title) {
-                    // Note: Le sélecteur tracker utilise l'href comme base unique
-                    if (!tracker.has(sel)) link.remove();
+                if (link.getAttribute('href') !== href) {
+                    link.href = href;
                 }
             });
         },
 
-        parse: async function() {
-            const s = document.querySelector('aria-ml script[type="style+json"], aria-ml script[type="application/style+json"]');
-            if (!s) return null;
+        /**
+         * Résout le thème en remontant jusqu'à <aria-ml>.
+         */
+        getThemeContext: function(el) {
+            let theme = el.getAttribute('theme');
+            let conflict = false;
+            let current = el.parentElement;
 
-            // Si attribut src présent (URL ou data:base64)
+            while (current && current.tagName.toLowerCase() !== 'aria-ml') {
+                const pTheme = current.getAttribute('theme');
+                if (pTheme) {
+                    if (theme && theme !== pTheme) conflict = true;
+                    theme = pTheme;
+                }
+                current = current.parentElement;
+            }
+            return { theme, conflict };
+        },
+
+        /**
+         * Applique le CSS et gère le polyfill @import pour l'attribut src.
+         */
+        applyStyle: function(s, active) {
+            if (s.hasAttribute('src') && !s.textContent.includes('@import')) {
+                s.textContent = `@import url("${s.getAttribute('src')}?v=${Date.now()}");`;
+            }
+            if (s.disabled !== !active) {
+                s.disabled = !active;
+            }
+        },
+
+        /**
+         * Récupère le JSON avec système de cache pour les sources externes.
+         */
+        async getJsonContent(s) {
             if (s.hasAttribute('src')) {
-                return await this.fetchExternalJson(s.getAttribute('src'));
-            }
+                const url = s.getAttribute('src');
+                if (this._jsonCache.has(url)) return this._jsonCache.get(url);
 
-            try {
-                return s.textContent ? JSON.parse(s.textContent) : null;
-            } catch(e) {
-                return null;
+                try {
+                    const r = await fetch(url);
+                    const data = await r.json();
+                    this._jsonCache.set(url, data);
+                    return data;
+                } catch(e) { 
+                    console.error("AriaML: Fetch JSON error", url, e);
+                    return null; 
+                }
             }
+            try { return JSON.parse(s.textContent); } catch(e) { return null; }
+        },
+
+        /**
+         * Injecte une balise de preload dans le head.
+         */
+        ensurePreload: function(href) {
+            if (!document.head.querySelector(`link[rel="preload"][href="${href}"]`)) {
+                const l = document.createElement('link');
+                l.rel = 'preload'; 
+                l.as = 'style'; 
+                l.href = href;
+                document.head.appendChild(l);
+            }
+        },
+
+        /**
+         * Extrait les variables CSS pour piloter l'interface du navigateur.
+         */
+        syncSystemParams: function(root) {
+            const style = getComputedStyle(root);
+            const mapping = { 
+                '--browser-color': 'theme-color', 
+                '--viewport': 'viewport' 
+            };
+
+            Object.entries(mapping).forEach(([variable, metaName]) => {
+                const val = style.getPropertyValue(variable).trim().replace(/['"]/g, '');
+                if (val) {
+                    let meta = document.head.querySelector(`meta[name="${metaName}"]`);
+                    if (!meta) {
+                        meta = document.createElement('meta');
+                        meta.name = metaName;
+                        document.head.appendChild(meta);
+                    }
+                    if (meta.getAttribute('content') !== val) {
+                        meta.content = val;
+                    }
+                }
+            });
         }
     };
 
     window.AppearanceManager = AppearanceManager;
-    
-    const root = document.querySelector('aria-ml');
-    
-    if (root) {
-        new MutationObserver(async () => {
-            const config = await AppearanceManager.parse();
-            if (config) AppearanceManager.render(config);
-        }).observe(root, { childList: true, subtree: true, characterData: true });
-    }
 
-    // EXECUTION INITIALE
-    (async () => {
-        const config = await AppearanceManager.parse();
-        if (config) {
-            await AppearanceManager.render(config);
+    const init = () => {
+        const target = document.querySelector('aria-ml');
+        if (target) {
+            const observer = new MutationObserver(() => AppearanceManager.render());
+            observer.observe(target, { 
+                childList: true, 
+                subtree: true, 
+                attributes: true, 
+                attributeFilter: ['theme', 'media', 'src'] 
+            });
+            AppearanceManager.render();
         }
-    })();
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
 })();
