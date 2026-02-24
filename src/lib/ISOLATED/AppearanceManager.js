@@ -1,7 +1,6 @@
 /**
- * AppearanceManager.js
- * Moteur de rendu AriaML (v1.6.3)
- * Gère les groupements thématiques, les classes volatiles et le cache.
+ * AppearanceManager.js (v1.6.4)
+ * Correction : Synchronisation forcée de l'attribut disabled et injection @import.
  */
 (function() {
     const AppearanceManager = {
@@ -20,17 +19,14 @@
             const root = document.querySelector('aria-ml');
             if (!root) { this.isUpdating = false; return; }
 
-            const styleNodes = Array.from(root.querySelectorAll('style'));
+            const resources = Array.from(root.querySelectorAll('style'));
             let autoThemeFound = false;
 
-            // Premier passage pour identifier le thème automatique si nécessaire
-            // (Seulement si ThemeManager n'a pas de thème forcé)
             if (!window.ThemeManager?.activeName) {
-                for (const s of styleNodes) {
+                for (const s of resources) {
                     const { theme } = this.getThemeContext(s);
                     const media = s.getAttribute('media');
                     if (theme && media && window.matchMedia(media).matches) {
-                        // On enregistre le premier thème qui matche pour le cycle actuel
                         this._currentAutoTheme = theme;
                         autoThemeFound = true;
                         break;
@@ -39,11 +35,11 @@
                 if (!autoThemeFound) this._currentAutoTheme = null;
             }
 
-            for (const s of styleNodes) {
+            for (const s of resources) {
                 const { theme, conflict } = this.getThemeContext(s);
                 
                 if (conflict) {
-                    s.disabled = true;
+                    this.applyStyle(s, false); // Désactive en cas de conflit
                     console.warn("AriaML: Confusion de thème sur", s);
                     continue;
                 }
@@ -51,14 +47,12 @@
                 const mediaAttr = s.getAttribute('media');
                 const matchesMedia = !mediaAttr || window.matchMedia(mediaAttr).matches;
                 
-                // Logique AriaML : Est-ce que cette ressource doit s'appliquer ?
                 let shouldApply = true;
                 if (theme) {
                     const isForced = window.ThemeManager?.activeName === theme;
                     const isAuto = !window.ThemeManager?.activeName && theme === this._currentAutoTheme;
                     shouldApply = (isForced || isAuto) && matchesMedia;
                 } else {
-                    // Ressource hors thème (neutre)
                     shouldApply = matchesMedia;
                 }
 
@@ -73,6 +67,7 @@
                 } else if (this.JSON_TYPES.ICONS.includes(type)) {
                     if (shouldApply) await this.handleIcons(s);
                 } else {
+                    // Pour CSS (style ou script type="text/css")
                     this.applyStyle(s, shouldApply);
                 }
             }
@@ -81,16 +76,36 @@
             this.isUpdating = false;
         },
 
+        applyStyle: function(s, active) {
+            // 1. Injection systématique du @import si SRC est présent (même hors SSR)
+            // On vérifie que c'est une ressource CSS et non un JSON
+            const type = s.getAttribute('type') || 'text/css';
+            if (s.hasAttribute('src') && type.includes('css')) {
+                const importRule = `@import url("${s.getAttribute('src')}");`;
+                if (s.textContent !== importRule) {
+                    s.textContent = importRule;
+                }
+            }
+
+            // 2. Gestion stricte de l'attribut 'disabled' (DOM + Attribut HTML)
+            if (!active) {
+                s.setAttribute('disabled', 'disabled');
+                s.disabled = true;
+            } else {
+                s.removeAttribute('disabled');
+                s.disabled = false;
+            }
+        },
+
+        // ... (reste des méthodes handleVolatiles, getJsonContent, etc. inchangées)
         handleVolatiles: async function(s, shouldApply) {
             const data = await this.getJsonContent(s);
             if (!data) return;
             const action = shouldApply ? 'add' : 'remove';
-            
             Object.entries(data).forEach(([selector, classes]) => {
                 const targets = document.querySelectorAll(selector);
                 const classList = (Array.isArray(classes) ? classes : classes.split(/\s+/))
                                    .map(c => c.trim()).filter(c => c);
-
                 if (classList.length > 0) {
                     targets.forEach(t => t.classList[action](...classList));
                 }
@@ -124,13 +139,6 @@
                 current = current.parentElement;
             }
             return { theme, conflict };
-        },
-
-        applyStyle: function(s, active) {
-            if (s.hasAttribute('src') && !s.textContent.includes('@import')) {
-                s.textContent = `@import url("${s.getAttribute('src')}");`;
-            }
-            if (s.disabled !== !active) s.disabled = !active;
         },
 
         async getJsonContent(s) {
@@ -175,24 +183,21 @@
 
     window.AppearanceManager = AppearanceManager;
 
-	const init = () => {
-		const target = document.querySelector('aria-ml');
-		const isSSR = document.head.hasAttribute('data-ssr');
+    const init = () => {
+        const target = document.querySelector('aria-ml');
+        const isSSR = document.head.hasAttribute('data-ssr');
 
-		if (target) {
-			new MutationObserver(() => AppearanceManager.render()).observe(target, { 
-				childList: true, subtree: true, attributes: true, 
-				attributeFilter: ['theme', 'media', 'src'] 
-			});
+        if (target) {
+            new MutationObserver(() => AppearanceManager.render()).observe(target, { 
+                childList: true, subtree: true, attributes: true, 
+                attributeFilter: ['theme', 'media', 'src'] 
+            });
 
-			// Si SSR, on considère que le premier rendu est valide.
-			// On n'exécute render() immédiatement que si ce n'est PAS du SSR
-			// ou si le fragment a été injecté dynamiquement.
-			if (!isSSR || target.tagName === 'ARIA-ML-FRAGMENT') {
-				AppearanceManager.render();
-			}
-		}
-	};
+            if (!isSSR || target.tagName === 'ARIA-ML-FRAGMENT') {
+                AppearanceManager.render();
+            }
+        }
+    };
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
     else init();
