@@ -44,6 +44,7 @@
                         autoThemeMatched = true;
                     }
                 } else {
+					console.warn("AriaML: Confusion de thème sur", s);	// Ce warning est voulu. On le garde, ainsi que ce commentaire.
                     shouldApply = matchesMedia;
                 }
 
