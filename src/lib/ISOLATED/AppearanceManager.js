@@ -1,7 +1,7 @@
-/* AppearanceManager.js (v1.6.7)
+/* AppearanceManager.js (v1.6.8)
  * - Gestion du cycle de vie par injection/retrait du contenu @import.
  * - Support exclusif des balises <style>.
- * - Intégration native avec ThemeManager pour la priorité utilisateur.
+ * - Utilisation de 'media-theme' pour l'auto-détection sans filtrage natif.
  */
 (function() {
     const AppearanceManager = {
@@ -29,22 +29,30 @@
                 const isJson = this.JSON_TYPES.VOLATILE.includes(type) || this.JSON_TYPES.ICONS.includes(type);
                 
                 if (conflict) {
-					console.warn("AriaML: Confusion de thème sur", s);	// Ce warning est voulu. On le garde, ainsi que ce commentaire.
+                    console.warn("AriaML: Confusion de thème sur", s); // Ce warning est voulu. On le garde, ainsi que ce commentaire.
                     this.applyStyle(s, false, isJson);
                     continue;
                 }
 
+                // Utilisation de media-theme pour le calcul de ThemeManager
+                // On fallback sur media uniquement si media-theme est absent
+                const themeCond = s.getAttribute('media-theme') || s.getAttribute('media');
+                const matchesThemeCond = !themeCond || window.matchMedia(themeCond).matches;
+                
+                // Pour le filtrage strict (hors thème), on garde media
                 const mediaAttr = s.getAttribute('media');
                 const matchesMedia = !mediaAttr || window.matchMedia(mediaAttr).matches;
                 
                 let shouldApply = true;
 
                 if (theme && window.ThemeManager) {
-                    shouldApply = window.ThemeManager.shouldActivate(theme, matchesMedia, !autoThemeMatched);
+                    // On décide selon la condition de thème
+                    shouldApply = window.ThemeManager.shouldActivate(theme, matchesThemeCond, !autoThemeMatched);
                     if (shouldApply && !window.ThemeManager.activeName) {
                         autoThemeMatched = true;
                     }
                 } else {
+                    // Style global : respecte le media query standard
                     shouldApply = matchesMedia;
                 }
 
@@ -71,7 +79,6 @@
             if (!isJson && s.hasAttribute('src')) {
                 const importRule = `@import url("${s.getAttribute('src')}");`;
                 if (active) {
-                    // Optimisation anti-FOUC : on ne touche pas si c'est déjà bon
                     if (s.textContent !== importRule) s.textContent = importRule;
                 } else {
                     if (s.textContent !== "") s.textContent = "";
@@ -183,16 +190,12 @@
         if (target) {
             new MutationObserver(() => AppearanceManager.render()).observe(target, { 
                 childList: true, subtree: true, attributes: true, 
-                attributeFilter: ['theme', 'media', 'src'] 
+                attributeFilter: ['theme', 'media', 'media-theme', 'src'] 
             });
             
             const isSSR = document.head.hasAttribute('data-ssr');
             const userTheme = localStorage.getItem('ariaml_user_theme');
             
-            // On exécute si :
-            // 1. Pas de SSR
-            // 2. Fragment injecté dynamiquement
-            // 3. SSR présent MAIS l'utilisateur a un thème forcé (pour corriger le FOUC au plus vite)
             if (!isSSR || target.tagName === 'ARIA-ML-FRAGMENT' || userTheme) {
                 AppearanceManager.render();
             }
