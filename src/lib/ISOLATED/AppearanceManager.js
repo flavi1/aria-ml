@@ -1,4 +1,4 @@
-* AppearanceManager.js (v1.6.6)
+/* AppearanceManager.js (v1.6.6)
  * - Gestion du cycle de vie par injection/retrait du contenu @import.
  * - Support exclusif des balises <style>.
  * - Neutralisation réelle des ressources hors-contexte.
