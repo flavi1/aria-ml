@@ -10,6 +10,8 @@
 		// Si SSR, on indexe l'existant pour que upsert() sache qu'ils sont déjà là
 		if (isSSR) {
 			document.querySelectorAll('head meta, head link').forEach(el => {
+				if (el.getAttribute('rel')?.includes('stylesheet')) return;
+				
 				const tag = el.tagName.toLowerCase();
 				const idAttrs = {};
 				if (el.hasAttribute('name')) idAttrs.name = el.getAttribute('name');
@@ -143,6 +145,8 @@
         },
 
         upsert(tag, idAttrs, allAttrs) {
+			if (idAttrs.rel?.includes('stylesheet')) return;
+			
             // Échappement basique des sélecteurs pour la robustesse
             const selector = tag + Object.entries(idAttrs)
                 .map(([k, v]) => `[${k}="${String(v).replace(/"/g, '\\"')}"]`).join('');

@@ -46,7 +46,6 @@
 			link.rel = 'stylesheet';
 			link.href = `${baseUrl}${path}`;
 			document.head.prepend(link);
-console.log(link)
 		});
 	}
 
