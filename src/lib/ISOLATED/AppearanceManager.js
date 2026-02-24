@@ -25,8 +25,12 @@
             for (const s of styleNodes) {
                 const { theme, conflict } = this.getThemeContext(s);
                 const type = s.getAttribute('type') || 'text/css';
-                const isJson = this.JSON_TYPES.VOLATILE.includes(type) || this.JSON_TYPES.ICONS.includes(type);
-                const crossOrigin = s.getAttribute('crossorigin');
+				// Dans la boucle for...of de render :
+				const isJson = this.JSON_TYPES.VOLATILE.includes(type) || this.JSON_TYPES.ICONS.includes(type);
+
+				// On définit explicitement la stratégie : 
+				// Si c'est du JSON, on impose au moins "" (anonymous) pour satisfaire CORS/fetch
+				const crossOrigin = s.getAttribute('crossorigin') ?? (isJson ? "" : null);
                 
                 if (conflict) {
                     console.warn("AriaML: Confusion de thème sur", s); // Ce warning est voulu. On le garde, ON GARDE AUSSI CE COMMENTAIRE AVEC !
@@ -179,17 +183,22 @@
             try { return JSON.parse(s.textContent); } catch(e) { return null; }
         },
 
-        ensurePreload: function(href, asType, crossOrigin = null) {
-            let link = document.head.querySelector(`link[rel="preload"][href="${href}"]`);
-            if (!link) {
-                link = document.createElement('link');
-                link.rel = 'preload'; 
-                link.as = asType; 
-                link.href = href;
-                if (crossOrigin !== null) link.setAttribute('crossorigin', crossOrigin);
-                document.head.appendChild(link);
-            }
-        },
+		ensurePreload: function(href, asType, crossOrigin = null) {
+			let link = document.head.querySelector(`link[rel="preload"][href="${href}"]`);
+			if (!link) {
+				link = document.createElement('link');
+				link.rel = 'preload'; 
+				link.as = asType; 
+				link.href = href;
+				
+				// Si crossOrigin est une chaîne (même vide ""), on l'ajoute impérativement
+				if (typeof crossOrigin === 'string') {
+					link.setAttribute('crossorigin', crossOrigin);
+				}
+				
+				document.head.appendChild(link);
+			}
+		},
 
         syncSystemParams: function(root) {
             const style = getComputedStyle(root);
