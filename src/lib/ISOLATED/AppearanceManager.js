@@ -34,9 +34,8 @@
                     continue;
                 }
 
-                // Utilisation de media-theme pour le calcul de ThemeManager
-                // On fallback sur media uniquement si media-theme est absent
-                const themeCond = s.getAttribute('media-theme') || s.getAttribute('media');
+                // Utilisation exclusive de media-theme pour le calcul de ThemeManager
+                const themeCond = s.getAttribute('media-theme');
                 const matchesThemeCond = !themeCond || window.matchMedia(themeCond).matches;
                 
                 // Pour le filtrage strict (hors thème), on garde media
@@ -46,13 +45,13 @@
                 let shouldApply = true;
 
                 if (theme && window.ThemeManager) {
-                    // On décide selon la condition de thème
+                    // On décide uniquement selon media-theme pour l'auto-détection
                     shouldApply = window.ThemeManager.shouldActivate(theme, matchesThemeCond, !autoThemeMatched);
                     if (shouldApply && !window.ThemeManager.activeName) {
                         autoThemeMatched = true;
                     }
                 } else {
-                    // Style global : respecte le media query standard
+                    // Style global : respecte le media query standard (viewport, etc.)
                     shouldApply = matchesMedia;
                 }
 
