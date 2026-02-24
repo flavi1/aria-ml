@@ -1,6 +1,7 @@
-/**
- * AppearanceManager.js (v1.6.4)
- * Correction : Synchronisation forcée de l'attribut disabled et injection @import.
+* AppearanceManager.js (v1.6.6)
+ * - Gestion du cycle de vie par injection/retrait du contenu @import.
+ * - Support exclusif des balises <style>.
+ * - Neutralisation réelle des ressources hors-contexte.
  */
 (function() {
     const AppearanceManager = {
@@ -19,11 +20,12 @@
             const root = document.querySelector('aria-ml');
             if (!root) { this.isUpdating = false; return; }
 
-            const resources = Array.from(root.querySelectorAll('style'));
+            const styleNodes = Array.from(root.querySelectorAll('style'));
             let autoThemeFound = false;
 
+            // 1. Détection du thème automatique (Media Queries)
             if (!window.ThemeManager?.activeName) {
-                for (const s of resources) {
+                for (const s of styleNodes) {
                     const { theme } = this.getThemeContext(s);
                     const media = s.getAttribute('media');
                     if (theme && media && window.matchMedia(media).matches) {
@@ -35,11 +37,14 @@
                 if (!autoThemeFound) this._currentAutoTheme = null;
             }
 
-            for (const s of resources) {
+            // 2. Traitement des ressources
+            for (const s of styleNodes) {
                 const { theme, conflict } = this.getThemeContext(s);
+                const type = s.getAttribute('type') || 'text/css';
+                const isJson = this.JSON_TYPES.VOLATILE.includes(type) || this.JSON_TYPES.ICONS.includes(type);
                 
                 if (conflict) {
-                    this.applyStyle(s, false); // Désactive en cas de conflit
+                    this.applyStyle(s, false, isJson);
                     console.warn("AriaML: Confusion de thème sur", s);
                     continue;
                 }
@@ -56,19 +61,20 @@
                     shouldApply = matchesMedia;
                 }
 
+                // Préchargement si SRC est présent
                 if (s.hasAttribute('src') && s.hasAttribute('preload')) {
-                    this.ensurePreload(s.getAttribute('src'));
+                    this.ensurePreload(s.getAttribute('src'), isJson ? 'fetch' : 'style');
                 }
 
-                const type = s.getAttribute('type') || 'text/css';
-
+                // Application selon le type
                 if (this.JSON_TYPES.VOLATILE.includes(type)) {
                     await this.handleVolatiles(s, shouldApply);
+                    this.applyStyle(s, shouldApply, true);
                 } else if (this.JSON_TYPES.ICONS.includes(type)) {
                     if (shouldApply) await this.handleIcons(s);
+                    this.applyStyle(s, shouldApply, true);
                 } else {
-                    // Pour CSS (style ou script type="text/css")
-                    this.applyStyle(s, shouldApply);
+                    this.applyStyle(s, shouldApply, false);
                 }
             }
 
@@ -76,18 +82,18 @@
             this.isUpdating = false;
         },
 
-        applyStyle: function(s, active) {
-            // 1. Injection systématique du @import si SRC est présent (même hors SSR)
-            // On vérifie que c'est une ressource CSS et non un JSON
-            const type = s.getAttribute('type') || 'text/css';
-            if (s.hasAttribute('src') && type.includes('css')) {
+        applyStyle: function(s, active, isJson = false) {
+            // Pour le CSS, on joue sur le textContent pour activer/désactiver
+            if (!isJson && s.hasAttribute('src')) {
                 const importRule = `@import url("${s.getAttribute('src')}");`;
-                if (s.textContent !== importRule) {
-                    s.textContent = importRule;
+                if (active) {
+                    if (s.textContent !== importRule) s.textContent = importRule;
+                } else {
+                    if (s.textContent !== "") s.textContent = "";
                 }
             }
 
-            // 2. Gestion stricte de l'attribut 'disabled' (DOM + Attribut HTML)
+            // Synchronisation de l'attribut pour le debug (même si l'effet CSS est géré par le contenu)
             if (!active) {
                 s.setAttribute('disabled', 'disabled');
                 s.disabled = true;
@@ -97,7 +103,6 @@
             }
         },
 
-        // ... (reste des méthodes handleVolatiles, getJsonContent, etc. inchangées)
         handleVolatiles: async function(s, shouldApply) {
             const data = await this.getJsonContent(s);
             if (!data) return;
@@ -155,10 +160,12 @@
             try { return JSON.parse(s.textContent); } catch(e) { return null; }
         },
 
-        ensurePreload: function(href) {
+        ensurePreload: function(href, asType) {
             if (!document.head.querySelector(`link[rel="preload"][href="${href}"]`)) {
                 const l = document.createElement('link');
-                l.rel = 'preload'; l.as = 'style'; l.href = href;
+                l.rel = 'preload'; 
+                l.as = asType; 
+                l.href = href;
                 document.head.appendChild(l);
             }
         },
@@ -186,13 +193,11 @@
     const init = () => {
         const target = document.querySelector('aria-ml');
         const isSSR = document.head.hasAttribute('data-ssr');
-
         if (target) {
             new MutationObserver(() => AppearanceManager.render()).observe(target, { 
                 childList: true, subtree: true, attributes: true, 
                 attributeFilter: ['theme', 'media', 'src'] 
             });
-
             if (!isSSR || target.tagName === 'ARIA-ML-FRAGMENT') {
                 AppearanceManager.render();
             }
