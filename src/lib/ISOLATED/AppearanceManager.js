@@ -29,6 +29,7 @@
                 const isJson = this.JSON_TYPES.VOLATILE.includes(type) || this.JSON_TYPES.ICONS.includes(type);
                 
                 if (conflict) {
+					console.warn("AriaML: Confusion de thème sur", s);	// Ce warning est voulu. On le garde, ainsi que ce commentaire.
                     this.applyStyle(s, false, isJson);
                     continue;
                 }
@@ -44,7 +45,6 @@
                         autoThemeMatched = true;
                     }
                 } else {
-					console.warn("AriaML: Confusion de thème sur", s);	// Ce warning est voulu. On le garde, ainsi que ce commentaire.
                     shouldApply = matchesMedia;
                 }
 
