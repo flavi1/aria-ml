@@ -1,7 +1,7 @@
-/* AppearanceManager.js (v1.6.6)
+/* AppearanceManager.js (v1.6.7)
  * - Gestion du cycle de vie par injection/retrait du contenu @import.
  * - Support exclusif des balises <style>.
- * - Neutralisation réelle des ressources hors-contexte.
+ * - Intégration native avec ThemeManager pour la priorité utilisateur.
  */
 (function() {
     const AppearanceManager = {
@@ -21,23 +21,8 @@
             if (!root) { this.isUpdating = false; return; }
 
             const styleNodes = Array.from(root.querySelectorAll('style'));
-            let autoThemeFound = false;
+            let autoThemeMatched = false;
 
-            // 1. Détection du thème automatique (Media Queries)
-            if (!window.ThemeManager?.activeName) {
-                for (const s of styleNodes) {
-                    const { theme } = this.getThemeContext(s);
-                    const media = s.getAttribute('media');
-                    if (theme && media && window.matchMedia(media).matches) {
-                        this._currentAutoTheme = theme;
-                        autoThemeFound = true;
-                        break;
-                    }
-                }
-                if (!autoThemeFound) this._currentAutoTheme = null;
-            }
-
-            // 2. Traitement des ressources
             for (const s of styleNodes) {
                 const { theme, conflict } = this.getThemeContext(s);
                 const type = s.getAttribute('type') || 'text/css';
@@ -45,7 +30,6 @@
                 
                 if (conflict) {
                     this.applyStyle(s, false, isJson);
-                    console.warn("AriaML: Confusion de thème sur", s);
                     continue;
                 }
 
@@ -53,20 +37,20 @@
                 const matchesMedia = !mediaAttr || window.matchMedia(mediaAttr).matches;
                 
                 let shouldApply = true;
-                if (theme) {
-                    const isForced = window.ThemeManager?.activeName === theme;
-                    const isAuto = !window.ThemeManager?.activeName && theme === this._currentAutoTheme;
-                    shouldApply = (isForced || isAuto) && matchesMedia;
+
+                if (theme && window.ThemeManager) {
+                    shouldApply = window.ThemeManager.shouldActivate(theme, matchesMedia, !autoThemeMatched);
+                    if (shouldApply && !window.ThemeManager.activeName) {
+                        autoThemeMatched = true;
+                    }
                 } else {
                     shouldApply = matchesMedia;
                 }
 
-                // Préchargement si SRC est présent
                 if (s.hasAttribute('src') && s.hasAttribute('preload')) {
                     this.ensurePreload(s.getAttribute('src'), isJson ? 'fetch' : 'style');
                 }
 
-                // Application selon le type
                 if (this.JSON_TYPES.VOLATILE.includes(type)) {
                     await this.handleVolatiles(s, shouldApply);
                     this.applyStyle(s, shouldApply, true);
@@ -83,23 +67,26 @@
         },
 
         applyStyle: function(s, active, isJson = false) {
-            // Pour le CSS, on joue sur le textContent pour activer/désactiver
             if (!isJson && s.hasAttribute('src')) {
                 const importRule = `@import url("${s.getAttribute('src')}");`;
                 if (active) {
+                    // Optimisation anti-FOUC : on ne touche pas si c'est déjà bon
                     if (s.textContent !== importRule) s.textContent = importRule;
                 } else {
                     if (s.textContent !== "") s.textContent = "";
                 }
             }
 
-            // Synchronisation de l'attribut pour le debug (même si l'effet CSS est géré par le contenu)
             if (!active) {
-                s.setAttribute('disabled', 'disabled');
-                s.disabled = true;
+                if (!s.hasAttribute('disabled')) {
+                    s.setAttribute('disabled', 'disabled');
+                    s.disabled = true;
+                }
             } else {
-                s.removeAttribute('disabled');
-                s.disabled = false;
+                if (s.hasAttribute('disabled')) {
+                    s.removeAttribute('disabled');
+                    s.disabled = false;
+                }
             }
         },
 
@@ -192,13 +179,20 @@
 
     const init = () => {
         const target = document.querySelector('aria-ml');
-        const isSSR = document.head.hasAttribute('data-ssr');
         if (target) {
             new MutationObserver(() => AppearanceManager.render()).observe(target, { 
                 childList: true, subtree: true, attributes: true, 
                 attributeFilter: ['theme', 'media', 'src'] 
             });
-            if (!isSSR || target.tagName === 'ARIA-ML-FRAGMENT') {
+            
+            const isSSR = document.head.hasAttribute('data-ssr');
+            const userTheme = localStorage.getItem('ariaml_user_theme');
+            
+            // On exécute si :
+            // 1. Pas de SSR
+            // 2. Fragment injecté dynamiquement
+            // 3. SSR présent MAIS l'utilisateur a un thème forcé (pour corriger le FOUC au plus vite)
+            if (!isSSR || target.tagName === 'ARIA-ML-FRAGMENT' || userTheme) {
                 AppearanceManager.render();
             }
         }
