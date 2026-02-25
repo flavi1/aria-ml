@@ -231,19 +231,65 @@ function processBindings(rootElement, xmlNode) {
     }
 }
 
+
+// Cache pour stocker les arbres XML par ID de script (NodeCache)
+const modelCache = new Map();
+
+function getXmlModel(element) {
+    // 1. Chercher l'ID défini ou prendre le premier script JSON
+    const modelId = element.getAttribute("model");
+    const script = modelId 
+        ? document.getElementById(modelId) 
+        : document.querySelector('script[type*="json"]');
+
+    if (!script) return null;
+
+    // 2. Gestion du cache (NodeCache) pour la performance
+    if (modelCache.has(script)) {
+        return modelCache.get(script);
+    }
+
+    // 3. Conversion et mise en cache
+    try {
+        const data = JSON.parse(script.textContent);
+        const xmlDoc = jsonToXml(data, modelId || "default");
+        modelCache.set(script, xmlDoc);
+        return xmlDoc;
+    } catch (e) {
+        console.error("Erreur de parsing JSON pour le modèle:", e);
+        return null;
+    }
+}
+
 // 4. Coordination Globale
-function processBindings(rootElement, xmlNode) {
-    // On traite les références directes
+function processBindings(rootElement, currentXmlNode = null) {
+    // Si l'élément définit son propre modèle, on change de contexte XML
+    let activeXmlNode = currentXmlNode;
+    if (rootElement.hasAttribute && rootElement.hasAttribute("model")) {
+        const newModel = getXmlModel(rootElement);
+        if (newModel) activeXmlNode = newModel.documentElement;
+    }
+
+    // Si on n'a toujours pas de contexte, on cherche le modèle par défaut
+    if (!activeXmlNode && rootElement === document.body) {
+        const defaultModel = getXmlModel(rootElement);
+        if (defaultModel) activeXmlNode = defaultModel.documentElement;
+    }
+
+    if (!activeXmlNode) return;
+
+    // Traitement des références directes
     const refs = rootElement.querySelectorAll("[ref]");
     refs.forEach(el => {
-        const scope = el.closest("[_bindingNode]")?._bindingNode || xmlNode;
+        // Respect du scope : priorité au bindingNode parent, sinon racine du modèle actif
+        const scope = el.closest("[_bindingNode]")?._bindingNode || activeXmlNode;
         evaluateRef(el, scope);
     });
 
-    // On traite les itérations
+    // Traitement des itérations
     const eachs = rootElement.querySelectorAll("[each]");
     eachs.forEach(el => {
-        const scope = el.closest("[_bindingNode]")?._bindingNode || xmlNode;
+        const scope = el.closest("[_bindingNode]")?._bindingNode || activeXmlNode;
         renderEach(el, scope);
     });
 }
