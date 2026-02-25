@@ -80,7 +80,9 @@
 					"lib/ISOLATED/BehaviorManager/GlobalSheetParser.js",
 					"lib/ISOLATED/BehaviorManager/Core.js",
 					"lib/ISOLATED/BehaviorManager/Patterns.js",
-					"lib/ISOLATED/BehaviorManager/ScrollSpy.js"
+					"lib/ISOLATED/BehaviorManager/ScrollSpy.js",
+					
+					"lib/ISOLATED/Model/DataBinding.js"
 				],
 				"css": ["lib/css/init.css"],
 				"bhv": ["lib/bhv/init.bhv"]
