@@ -6,27 +6,21 @@ const TemplateRegistry = new Map();
 
 /**
  * 1. COMPILATION DES TEMPLATES
- * Extrait les templates globaux et prépare les éléments porteurs de directives.
  */
 const compileTemplates = (root = document) => {
-    // Indexation des templates globaux possédant un ID
     root.querySelectorAll('template[id]').forEach(tpl => {
         TemplateRegistry.set(tpl.id, tpl.content);
     });
 
-    // Préparation des éléments ref/each
     root.querySelectorAll('[ref], [each]').forEach(el => {
-        if (el._ariaTemplate) return; // Déjà compilé
+        if (el._ariaTemplate) return;
 
         let fragment = null;
-
-        // 1. Priorité à l'attribut template
         const tplId = el.getAttribute('template');
+        
         if (tplId && TemplateRegistry.has(tplId)) {
             fragment = TemplateRegistry.get(tplId).cloneNode(true);
-        } 
-        // 2. Sinon, premier enfant direct (doit être un <template>)
-        else {
+        } else {
             const firstChild = el.firstElementChild;
             if (firstChild && firstChild.tagName === 'TEMPLATE') {
                 fragment = firstChild.content;
@@ -35,7 +29,6 @@ const compileTemplates = (root = document) => {
 
         if (fragment) {
             el._ariaTemplate = fragment;
-            // On s'assure que le template reste le premier enfant en mode hydrated
             if (el.getAttribute('dom-state') !== 'hydrated' && !el.querySelector('template')) {
                 const tplTag = document.createElement('template');
                 tplTag.content.appendChild(fragment.cloneNode(true));
@@ -63,6 +56,8 @@ const evaluateXPath = (path, contextNode) => {
                 while (n = result.iterateNext()) nodes.push(n);
                 return nodes;
             }
+            case XPathResult.FIRST_ORDERED_NODE_TYPE: return result.singleNodeValue;
+            default: return null;
         }
     } catch (e) {
         console.warn(`AriaML XPath Error: ${path}`, e);
@@ -76,40 +71,48 @@ const evaluateXPath = (path, contextNode) => {
 const render = (container, contextNode = document.model.documentElement) => {
     if (!contextNode) return;
 
+    // On récupère tous les porteurs de directives
     const elements = container.querySelectorAll('[ref], [each]');
     
-    // Pour ne pas traiter les enfants d'un élément qui va lui-même être rendu (récursion contrôlée)
+    // Filtre pour ne traiter que les éléments de premier niveau dans ce conteneur
     const topLevelElements = Array.from(elements).filter(el => {
         const parent = el.parentElement.closest('[ref], [each]');
-        return !parent || parent === container;
+        return !parent || parent === container || parent === container.getRootNode();
     });
 
     topLevelElements.forEach(el => {
         const refPath = el.getAttribute('ref');
         const eachPath = el.getAttribute('each');
         
-        // Nettoyage des rendus précédents (on garde le template)
+        // Sauvegarde du contexte pour l'auto-édition (Observers.js)
+        el._XPathContext = contextNode;
+
+        // Nettoyage (on préserve le premier enfant <template>)
         const template = el.firstElementChild;
         while (el.lastElementChild && el.lastElementChild !== template) {
             el.removeChild(el.lastElementChild);
         }
 
         // CAS 1 : EACH (Itération)
-        let collection = [];
         if (eachPath) {
-            const result = evaluateXPath(eachPath, contextNode);
-            collection = Array.isArray(result) ? result : [];
+            const collection = evaluateXPath(eachPath, contextNode);
             
-            if (collection.length > 0) {
+            if (Array.isArray(collection) && collection.length > 0) {
                 collection.forEach(itemNode => {
                     const clone = el._ariaTemplate.cloneNode(true);
-                    // Rendu récursif du clone avec le nouveau contexte
-                    const wrapper = document.createElement('div'); // Temp pour querySelectorAll
+                    const wrapper = document.createElement('div'); 
                     wrapper.appendChild(clone);
+                    
+                    // Rendu récursif : le clone prend l'item XML comme contexte
                     render(wrapper, itemNode);
-                    while (wrapper.firstChild) el.appendChild(wrapper.firstChild);
+                    
+                    while (wrapper.firstChild) {
+                        const child = wrapper.firstChild;
+                        if (child.nodeType === 1) child._XPathContext = itemNode;
+                        el.appendChild(child);
+                    }
                 });
-                return; // On a fini pour cet élément
+                return;
             }
         }
 
@@ -122,8 +125,14 @@ const render = (container, contextNode = document.model.documentElement) => {
                 const clone = el._ariaTemplate.cloneNode(true);
                 const wrapper = document.createElement('div');
                 wrapper.appendChild(clone);
+                
                 render(wrapper, target);
-                while (wrapper.firstChild) el.appendChild(wrapper.firstChild);
+                
+                while (wrapper.firstChild) {
+                    const child = wrapper.firstChild;
+                    if (child.nodeType === 1) child._XPathContext = target;
+                    el.appendChild(child);
+                }
             } 
             // Si c'est un scalaire (String, Nombre, ou Fallback)
             else {
@@ -134,7 +143,6 @@ const render = (container, contextNode = document.model.documentElement) => {
                 } else if (el.tagName === 'SELECT') {
                     el.value = val;
                 } else {
-                    // Injection après le template
                     el.appendChild(document.createTextNode(val));
                 }
             }
@@ -159,5 +167,4 @@ const initDataBinding = () => {
     console.log("AriaML: DataBinding Hydrated.");
 };
 
-// Export ou auto-init
 window.addEventListener('model-ready', initDataBinding);

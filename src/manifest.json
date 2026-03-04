@@ -83,8 +83,8 @@
 					"lib/ISOLATED/BehaviorManager/ScrollSpy.js",
 					
 					"lib/ISOLATED/Model/Model.js",
-					"lib/ISOLATED/Model/Observers.js",
-					"lib/ISOLATED/Model/DataBinding.js"
+					"lib/ISOLATED/Model/DataBinding.js",
+					"lib/ISOLATED/Model/Observers.js"
 				],
 				"css": ["lib/css/init.css"],
 				"bhv": ["lib/bhv/init.bhv"]
