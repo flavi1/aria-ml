@@ -29,76 +29,74 @@ const domObserver = new MutationObserver((mutations) => {
 
 /**
  * 2. OBSERVER DU MODÈLE (Vers le DOM)
- * Surveille document.model pour mettre à jour ou créer les <script>
+ * Version corrigée pour la gestion asymétrique des attributs data-*
  */
 const modelObserver = new MutationObserver((mutations) => {
     if (isSyncing) return;
-    isSyncing = true; // On verrouille
+    isSyncing = true;
 
     mutations.forEach(mutation => {
-        // On s'intéresse aux enfants directs de <model>
         const nodes = mutation.type === 'childList' ? mutation.target.childNodes : [mutation.target];
         
         nodes.forEach(xmlNode => {
-            if (xmlNode.nodeType !== 1) return; // Uniquement les éléments
+            if (xmlNode.nodeType !== 1) return;
             
             const id = xmlNode.nodeName;
             let script = document.getElementById(id);
             
-            // Si le script n'existe pas, on le crée
             if (!script) {
                 script = document.createElement('script');
                 script.id = id;
                 script.setAttribute('type', 'json');
                 script.setAttribute('model', '');
-                
-                // Insertion : dans <aria-ml> ou à défaut dans <html>
-                const container = document.querySelector('aria-ml') || document.documentElement;
+                const container = document.querySelector('aria-ml') || document.body;
                 container.appendChild(script);
             }
 
-            // Mise à jour du contenu du script selon son type
+            // MIROIR DES ATTRIBUTS : Racine XML -> Script data-*
+            // On réinjecte le préfixe data- uniquement pour le script
+            Array.from(xmlNode.attributes).forEach(attr => {
+                script.setAttribute(`data-${attr.name}`, attr.value);
+            });
+
             const type = script.getAttribute('type') || 'json';
             if (type.includes('json')) {
-                script.textContent = JSON.stringify(xmlToJSON(xmlNode), null, 4);
+                // On passe false pour indiquer que nous sommes à la racine (gestion data-)
+                script.textContent = JSON.stringify(xmlToJSON(xmlNode, true), null, 4);
             } else if (type.includes('xml')) {
                 script.textContent = new XMLSerializer().serializeToString(xmlNode);
             }
-            
-            // Mise à jour des attributs data-* (le reflet inverse)
-            Array.from(xmlNode.attributes).forEach(attr => {
-                if (attr.name.startsWith('data-')) {
-                    script.setAttribute(attr.name, attr.value);
-                }
-            });
         });
     });
 
-    isSyncing = false; // On déverrouille
+    isSyncing = false;
 });
 
 /**
- * UTILITAIRE : Conversion XML vers JSON pour la persistance
+ * UTILITAIRE : xmlToJSON (Version Corrigée)
+ * @param {Node} node - Le nœud XML à convertir
+ * @param {Boolean} isRoot - Si vrai, ignore les attributs (déjà portés par data- sur le script)
  */
-function xmlToJSON(node) {
+function xmlToJSON(node, isRoot = false) {
     let obj = {};
     
-    // Attributs -> @key
-    Array.from(node.attributes).forEach(attr => {
-        if (!attr.name.startsWith('data-')) {
+    // Gestion des attributs dans le JSON
+    // Si ce n'est pas la racine, les attributs XML deviennent des @key
+    if (!isRoot) {
+        Array.from(node.attributes).forEach(attr => {
             obj[`@${attr.name}`] = attr.value;
-        }
-    });
+        });
+    }
 
-    // Enfants
+    // Traitement des enfants
     Array.from(node.childNodes).forEach(child => {
-        if (child.nodeType === 1) { // Element
+        if (child.nodeType === 1) {
             const key = child.nodeName;
-            const value = child.childElementCount > 0 || child.attributes.length > 0 
-                ? xmlToJSON(child) 
+            // Récursion : isRoot passe à false pour tous les enfants
+            const value = (child.childElementCount > 0 || child.attributes.length > 0) 
+                ? xmlToJSON(child, false) 
                 : child.textContent;
             
-            // Gestion des listes (item -> tableau)
             if (key === 'item') {
                 if (!Array.isArray(obj)) obj = [];
                 obj.push(value);
@@ -108,7 +106,9 @@ function xmlToJSON(node) {
         }
     });
     
-    return Object.keys(obj).length === 0 && node.textContent ? node.textContent : obj;
+    return (Object.keys(obj).length === 0 && node.textContent && !Array.isArray(obj)) 
+        ? node.textContent 
+        : obj;
 }
 
 /**
