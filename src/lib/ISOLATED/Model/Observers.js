@@ -2,9 +2,7 @@
  * Observers.js : Synchronisation miroir et gestion du cycle de vie
  */
 
-let isSyncing = false;
-
-let isSyncing = false;
+let isSyncing = false; // Corrigé : Doublon supprimé
 
 /**
  * 1. OBSERVER DU DOM (Vers document.model)
@@ -34,7 +32,6 @@ const modelObserver = new MutationObserver((mutations) => {
     isSyncing = true;
 
     try {
-        // A. Mise à jour des scripts de stockage (Miroir)
         const rootChildren = Array.from(document.model.documentElement.childNodes)
                                  .filter(n => n.nodeType === 1);
         
@@ -67,7 +64,6 @@ const modelObserver = new MutationObserver((mutations) => {
             }
         });
 
-        // B. DÉCLENCHEMENT DU RENDU (DataBinding.js)
         if (typeof render === 'function') {
             render(document.querySelector('aria-ml') || document.body);
         }
@@ -79,17 +75,13 @@ const modelObserver = new MutationObserver((mutations) => {
 
 /**
  * 3. GESTION DE L'AUTO-ÉDITION (DOM -> Modèle)
- * Écoute globale des saisies pour les éléments avec [ref]
  */
 document.addEventListener('input', (e) => {
     const el = e.target;
     const refPath = el.getAttribute('ref');
     if (!refPath || isSyncing) return;
 
-    // On récupère le contexte XPath (parent le plus proche avec ref/each)
-    const parentEl = el.parentElement?.closest('[ref], [each]');
-    // Note: Pour simplifier ici, on utilise evaluateXPath (doit être global ou importé)
-    // Mais le plus direct est de trouver le noeud XML cible
+    // Utilisation de _XPathContext pour supporter les chemins relatifs
     const targetNode = evaluateXPath(refPath, el._XPathContext || document.model.documentElement);
 
     if (targetNode instanceof Node) {
@@ -128,18 +120,15 @@ function xmlToJSON(node, isRoot = false) {
 }
 
 /**
- * 4. OBSERVER DU DATABINDING (Surveillance des directives HTML)
- * Déclenche le rendu pour les nouveaux éléments injectés dans le DOM.
+ * 4. OBSERVER DU DATABINDING
  */
 const dataBindingObserver = new MutationObserver((mutations) => {
     if (isSyncing) return;
 
     mutations.forEach(mutation => {
-        // Détection de nouveaux éléments ajoutés
         if (mutation.type === 'childList') {
             mutation.addedNodes.forEach(node => {
                 if (node.nodeType === 1) {
-                    // Si l'élément lui-même ou ses enfants ont des directives
                     if (node.hasAttribute('ref') || node.hasAttribute('each') || node.querySelector('[ref], [each]')) {
                         compileTemplates(node);
                         render(node, node._XPathContext || document.model.documentElement);
@@ -147,7 +136,6 @@ const dataBindingObserver = new MutationObserver((mutations) => {
                 }
             });
         }
-        // Détection de l'ajout d'un attribut ref/each sur un élément existant
         if (mutation.type === 'attributes') {
             const target = mutation.target;
             compileTemplates(target);
@@ -157,7 +145,7 @@ const dataBindingObserver = new MutationObserver((mutations) => {
 });
 
 /**
- * PHASE 1 : Initialisation du Modèle (Aussi tôt que possible)
+ * PHASE 1 : Initialisation du Modèle (Immédiat)
  */
 const initModel = () => {
     if (typeof document.model === 'undefined') {
@@ -165,13 +153,10 @@ const initModel = () => {
     }
 
     isSyncing = true;
-
-    // Import initial des données (scripts déjà présents dans le DOM à cet instant)
     document.querySelectorAll('script[model]').forEach(script => {
         syncModelNode(script);
     });
 
-    // Activation immédiate de la synchronisation Modèle <-> Scripts
     domObserver.observe(document.documentElement, {
         childList: true, subtree: true, attributes: true,
         attributeFilter: ['model', 'type', 'id']
@@ -181,7 +166,6 @@ const initModel = () => {
         childList: true, subtree: true, attributes: true, characterData: true
     });
 
-    // On libère le verrou après le premier cycle de sync
     setTimeout(() => { isSyncing = false; }, 0);
 };
 
@@ -190,28 +174,16 @@ const initModel = () => {
  */
 const initDOMBinding = () => {
     const ariaRoot = document.querySelector('aria-ml') || document.body;
-    
-    // 1. Signalement pour DataBinding.js (Rendu initial si dom-state="dry")
     window.dispatchEvent(new CustomEvent('model-ready'));
-
-    // 2. Activation de la surveillance des directives HTML
     dataBindingObserver.observe(ariaRoot, {
-        childList: true,
-        subtree: true,
-        attributes: true,
+        childList: true, subtree: true, attributes: true,
         attributeFilter: ['ref', 'each']
     });
-
     console.log("AriaML: DOM Binding actif.");
 };
 
-/**
- * EXÉCUTION DU CYCLE DE VIE
- */
-// On lance le modèle immédiatement
 initModel();
 
-// On lance le binding DOM quand l'arbre est prêt
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initDOMBinding);
 } else {
