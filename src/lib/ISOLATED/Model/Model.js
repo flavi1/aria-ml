@@ -4,7 +4,7 @@ const syncModelNode = (script) => {
     if (!id || !script.hasAttribute('model')) return;
 
     // 1. Recherche ou création du nœud racine dans document.model
-    let rootNode = document.model.documentElement.querySelector(`:scope > ${id}`);
+    let rootNode = document?.model.documentElement.querySelector(`:scope > ${id}`);
     if (rootNode) {
         while (rootNode.firstChild) rootNode.removeChild(rootNode.firstChild);
         // Nettoyage des anciens attributs pour éviter les résidus
