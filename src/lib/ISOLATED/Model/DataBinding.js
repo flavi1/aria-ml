@@ -13,7 +13,7 @@ const compileTemplates = (root = document) => {
     });
 
     root.querySelectorAll('[ref], [each]').forEach(el => {
-        if (el._ariaTemplate) return;
+        if (el.modelTemplate) return;
 
         let fragment = null;
         const tplId = el.getAttribute('template');
@@ -28,7 +28,7 @@ const compileTemplates = (root = document) => {
         }
 
         if (fragment) {
-            el._ariaTemplate = fragment;
+            el.modelTemplate = fragment;
             if (el.getAttribute('dom-state') !== 'hydrated' && !el.querySelector('template')) {
                 const tplTag = document.createElement('template');
                 tplTag.content.appendChild(fragment.cloneNode(true));
@@ -99,7 +99,7 @@ const render = (container, contextNode = document.model.documentElement) => {
             
             if (Array.isArray(collection) && collection.length > 0) {
                 collection.forEach(itemNode => {
-                    const clone = el._ariaTemplate.cloneNode(true);
+                    const clone = el.modelTemplate.cloneNode(true);
                     const wrapper = document.createElement('div'); 
                     wrapper.appendChild(clone);
                     
@@ -122,7 +122,7 @@ const render = (container, contextNode = document.model.documentElement) => {
             
             // Si c'est un nœud XML (Complexe)
             if (target instanceof Node && target.nodeType === 1) {
-                const clone = el._ariaTemplate.cloneNode(true);
+                const clone = el.modelTemplate.cloneNode(true);
                 const wrapper = document.createElement('div');
                 wrapper.appendChild(clone);
                 
