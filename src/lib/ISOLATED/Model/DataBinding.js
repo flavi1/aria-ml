@@ -1,76 +1,89 @@
 /**
- * DataBinding.js : Synchronisation miroir entre document.model et les balises <script>
+ * DataBinding.js : Synchronisation miroir optimisée
  */
 
-let isSyncing = false; // Verrou synchrone pour éviter les boucles d'observation
+let isSyncing = false;
 
 /**
  * 1. OBSERVER DU DOM (Vers document.model)
- * Surveille les scripts [model][type][id]
  */
 const domObserver = new MutationObserver((mutations) => {
     if (isSyncing) return;
     
     mutations.forEach(mutation => {
-        // Ajout ou modification de contenu/attributs
         const target = mutation.target;
+        // Détection sur le script lui-même (attributs ou texte)
         if (target.nodeName === 'SCRIPT' && target.hasAttribute('model')) {
             syncModelNode(target);
         }
         
-        // Gestion des nouveaux nœuds injectés
-        mutation.addedNodes.forEach(node => {
-            if (node.nodeName === 'SCRIPT' && node.hasAttribute('model')) {
-                syncModelNode(node);
-            }
-        });
+        // Détection de nouveaux scripts injectés
+        if (mutation.type === 'childList') {
+            mutation.addedNodes.forEach(node => {
+                if (node.nodeName === 'SCRIPT' && node.hasAttribute('model')) {
+                    syncModelNode(node);
+                }
+            });
+        }
     });
 });
 
 /**
  * 2. OBSERVER DU MODÈLE (Vers le DOM)
- * Version corrigée pour la gestion asymétrique des attributs data-*
  */
 const modelObserver = new MutationObserver((mutations) => {
     if (isSyncing) return;
     isSyncing = true;
 
-    mutations.forEach(mutation => {
-        const nodes = mutation.type === 'childList' ? mutation.target.childNodes : [mutation.target];
-        
-        nodes.forEach(xmlNode => {
-            if (xmlNode.nodeType !== 1) return;
+    try {
+        mutations.forEach(mutation => {
+            // On cible toujours les enfants directs de <model>
+            const rootChildren = Array.from(document.model.documentElement.childNodes)
+                                     .filter(n => n.nodeType === 1);
             
-            const id = xmlNode.nodeName;
-            let script = document.getElementById(id);
-            
-            if (!script) {
-                script = document.createElement('script');
-                script.id = id;
-                script.setAttribute('type', 'json');
-                script.setAttribute('model', '');
-                const container = document.querySelector('aria-ml') || document.body;
-                container.appendChild(script);
-            }
+            rootChildren.forEach(xmlNode => {
+                const id = xmlNode.nodeName;
+                let script = document.getElementById(id);
+                
+                if (!script) {
+                    script = document.createElement('script');
+                    script.id = id;
+                    script.setAttribute('type', 'json');
+                    script.setAttribute('model', '');
+                    const container = document.querySelector('aria-ml') || document.body;
+                    container.appendChild(script);
+                }
 
-            // MIROIR DES ATTRIBUTS : Racine XML -> Script data-*
-            // On réinjecte le préfixe data- uniquement pour le script
-            Array.from(xmlNode.attributes).forEach(attr => {
-                script.setAttribute(`data-${attr.name}`, attr.value);
+                // Sync Attributs : XML -> Script (data-*)
+                Array.from(xmlNode.attributes).forEach(attr => {
+                    const dataName = `data-${attr.name}`;
+                    if (script.getAttribute(dataName) !== attr.value) {
+                        script.setAttribute(dataName, attr.value);
+                    }
+                });
+
+                // Sync Contenu : XML -> Script (JSON/XML)
+                const type = script.getAttribute('type') || 'json';
+                let newContent = "";
+                
+                if (type.includes('json')) {
+                    newContent = JSON.stringify(xmlToJSON(xmlNode, true), null, 4);
+                } else if (type.includes('xml')) {
+                    newContent = new XMLSerializer().serializeToString(xmlNode);
+                }
+
+                if (script.textContent !== newContent) {
+                    script.textContent = newContent;
+                }
             });
-
-            const type = script.getAttribute('type') || 'json';
-            if (type.includes('json')) {
-                // On passe false pour indiquer que nous sommes à la racine (gestion data-)
-                script.textContent = JSON.stringify(xmlToJSON(xmlNode, true), null, 4);
-            } else if (type.includes('xml')) {
-                script.textContent = new XMLSerializer().serializeToString(xmlNode);
-            }
         });
-    });
-
-    isSyncing = false;
+    } finally {
+        // Timeout pour s'assurer que les événements de mutation DOM générés 
+        // par ces écritures soient ignorés par domObserver
+        setTimeout(() => { isSyncing = false; }, 0);
+    }
 });
+
 
 /**
  * UTILITAIRE : xmlToJSON (Version Corrigée)
@@ -111,18 +124,23 @@ function xmlToJSON(node, isRoot = false) {
         : obj;
 }
 
-return;
-
 /**
- * INITIALISATION
+ * INITIALISATION SÉCURISÉE
  */
 const init = () => {
-    // Initialisation du modèle si nécessaire
     if (typeof document.model === 'undefined') {
         document.model = document.implementation.createDocument(null, "model");
     }
 
-    // Lancement de l'observation du DOM
+    // 1. Verrouiller pour l'import initial
+    isSyncing = true;
+
+    // 2. Importer les scripts existants dans le modèle
+    document.querySelectorAll('script[model]').forEach(script => {
+        syncModelNode(script);
+    });
+
+    // 3. Activer les observers
     domObserver.observe(document.documentElement, {
         childList: true,
         subtree: true,
@@ -131,7 +149,6 @@ const init = () => {
         attributeFilter: ['model', 'type', 'id']
     });
 
-    // Lancement de l'observation du modèle
     modelObserver.observe(document.model.documentElement, {
         childList: true,
         subtree: true,
@@ -139,11 +156,11 @@ const init = () => {
         characterData: true
     });
 
-    // Premier passage synchrone sur les scripts existants
-    document.querySelectorAll('script[model]').forEach(syncModelNode);
+    // 4. Libérer le verrou
+    setTimeout(() => { isSyncing = false; }, 0);
+    console.log("AriaML: DataBinding initialisé.");
 };
 
-// Auto-amorçage selon l'état du document
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
 } else {
