@@ -82,7 +82,7 @@
 					"lib/ISOLATED/BehaviorManager/Patterns.js",
 					"lib/ISOLATED/BehaviorManager/ScrollSpy.js",
 					
-					"lib/ISOLATED/Model/DataBinding.js"
+					"lib/ISOLATED/Model/Model.js"
 				],
 				"css": ["lib/css/init.css"],
 				"bhv": ["lib/bhv/init.bhv"]
