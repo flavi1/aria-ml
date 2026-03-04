@@ -83,6 +83,7 @@
 					"lib/ISOLATED/BehaviorManager/ScrollSpy.js",
 					
 					"lib/ISOLATED/Model/Model.js",
+					"lib/ISOLATED/Model/Observers.js",
 					"lib/ISOLATED/Model/DataBinding.js"
 				],
 				"css": ["lib/css/init.css"],

@@ -3,34 +3,28 @@ const syncModelNode = (script) => {
     const type = script.getAttribute('type');
     if (!id || !script.hasAttribute('model')) return;
 
-	if(typeof document.model == 'undefined')
-		document.model = document.implementation.createDocument(null, "model");
+    if (typeof document.model == 'undefined')
+        document.model = document.implementation.createDocument(null, "model");
 
-    // 1. Recherche ou création du nœud racine dans document.model
     let rootNode = document.model.documentElement.querySelector(`:scope > ${id}`);
     if (rootNode) {
         while (rootNode.firstChild) rootNode.removeChild(rootNode.firstChild);
-        // Nettoyage des anciens attributs pour éviter les résidus
         Array.from(rootNode.attributes).forEach(attr => rootNode.removeAttribute(attr.name));
     } else {
         rootNode = document.model.createElement(id);
         document.model.documentElement.appendChild(rootNode);
     }
 
-    // 2. Reflet EXCLUSIF des attributs data-*
     Array.from(script.attributes).forEach(attr => {
         if (attr.name.startsWith('data-')) {
-            // On peut choisir de garder 'data-' ou de l'enlever. 
-            // Gardons-le pour la cohérence avec le DOM.
             rootNode.setAttribute(attr.name.substring(5), attr.value);
         }
     });
 
-    // 3. Parsing du contenu (JSON ou XML)
     const content = script.textContent.trim();
     if (!content) return;
 
-try {
+    try {
         if (type.includes('json')) {
             const data = JSON.parse(content);
             
@@ -44,11 +38,13 @@ try {
                 } else if (typeof obj === 'object' && obj !== null) {
                     Object.entries(obj).forEach(([key, val]) => {
                         if (key.startsWith('@')) {
-                            // Cas de l'attribut : @id -> id="..."
                             const attrName = key.slice(1).replace(/[^a-zA-Z0-9_]/g, '_');
-                            parent.setAttribute(attrName, val);
+                            // Cast explicite pour les attributs
+                            let attrValue = val;
+                            if (typeof val === 'boolean') attrValue = val ? "true" : "false";
+                            if (val === null) attrValue = "";
+                            parent.setAttribute(attrName, attrValue);
                         } else {
-                            // Cas du nœud enfant
                             const cleanKey = key.replace(':', '-').replace(/[^a-zA-Z0-9_]/g, '_');
                             const el = document.model.createElement(cleanKey);
                             parent.appendChild(el);
@@ -56,7 +52,14 @@ try {
                         }
                     });
                 } else {
-                    parent.textContent = obj;
+                    // Cast explicite pour le textContent
+                    if (typeof obj === 'boolean') {
+                        parent.textContent = obj ? "true" : "false";
+                    } else if (obj === null || typeof obj === 'undefined') {
+                        parent.textContent = "";
+                    } else {
+                        parent.textContent = obj;
+                    }
                 }
             };
             

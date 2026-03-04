@@ -1,168 +1,163 @@
 /**
- * DataBinding.js : Synchronisation miroir optimisée
+ * DataBinding.js - Moteur de rendu et de liaison AriaML v2.0
  */
 
-let isSyncing = false;
+const TemplateRegistry = new Map();
 
 /**
- * 1. OBSERVER DU DOM (Vers document.model)
+ * 1. COMPILATION DES TEMPLATES
+ * Extrait les templates globaux et prépare les éléments porteurs de directives.
  */
-const domObserver = new MutationObserver((mutations) => {
-    if (isSyncing) return;
-    
-    mutations.forEach(mutation => {
-        const target = mutation.target;
-        // Détection sur le script lui-même (attributs ou texte)
-        if (target.nodeName === 'SCRIPT' && target.hasAttribute('model')) {
-            syncModelNode(target);
-        }
-        
-        // Détection de nouveaux scripts injectés
-        if (mutation.type === 'childList') {
-            mutation.addedNodes.forEach(node => {
-                if (node.nodeName === 'SCRIPT' && node.hasAttribute('model')) {
-                    syncModelNode(node);
-                }
-            });
-        }
+const compileTemplates = (root = document) => {
+    // Indexation des templates globaux possédant un ID
+    root.querySelectorAll('template[id]').forEach(tpl => {
+        TemplateRegistry.set(tpl.id, tpl.content);
     });
-});
 
-/**
- * 2. OBSERVER DU MODÈLE (Vers le DOM)
- */
-const modelObserver = new MutationObserver((mutations) => {
-    if (isSyncing) return;
-    isSyncing = true;
+    // Préparation des éléments ref/each
+    root.querySelectorAll('[ref], [each]').forEach(el => {
+        if (el._ariaTemplate) return; // Déjà compilé
 
-    try {
-        mutations.forEach(mutation => {
-            // On cible toujours les enfants directs de <model>
-            const rootChildren = Array.from(document.model.documentElement.childNodes)
-                                     .filter(n => n.nodeType === 1);
-            
-            rootChildren.forEach(xmlNode => {
-                const id = xmlNode.nodeName;
-                let script = document.getElementById(id);
-                
-                if (!script) {
-                    script = document.createElement('script');
-                    script.id = id;
-                    script.setAttribute('type', 'json');
-                    script.setAttribute('model', '');
-                    const container = document.querySelector('aria-ml') || document.body;
-                    container.appendChild(script);
-                }
+        let fragment = null;
 
-                // Sync Attributs : XML -> Script (data-*)
-                Array.from(xmlNode.attributes).forEach(attr => {
-                    const dataName = `data-${attr.name}`;
-                    if (script.getAttribute(dataName) !== attr.value) {
-                        script.setAttribute(dataName, attr.value);
-                    }
-                });
+        // 1. Priorité à l'attribut template
+        const tplId = el.getAttribute('template');
+        if (tplId && TemplateRegistry.has(tplId)) {
+            fragment = TemplateRegistry.get(tplId).cloneNode(true);
+        } 
+        // 2. Sinon, premier enfant direct (doit être un <template>)
+        else {
+            const firstChild = el.firstElementChild;
+            if (firstChild && firstChild.tagName === 'TEMPLATE') {
+                fragment = firstChild.content;
+            }
+        }
 
-                // Sync Contenu : XML -> Script (JSON/XML)
-                const type = script.getAttribute('type') || 'json';
-                let newContent = "";
-                
-                if (type.includes('json')) {
-                    newContent = JSON.stringify(xmlToJSON(xmlNode, true), null, 4);
-                } else if (type.includes('xml')) {
-                    newContent = new XMLSerializer().serializeToString(xmlNode);
-                }
-
-                if (script.textContent !== newContent) {
-                    script.textContent = newContent;
-                }
-            });
-        });
-    } finally {
-        // Timeout pour s'assurer que les événements de mutation DOM générés 
-        // par ces écritures soient ignorés par domObserver
-        setTimeout(() => { isSyncing = false; }, 0);
-    }
-});
-
-
-/**
- * UTILITAIRE : xmlToJSON (Version Corrigée)
- * @param {Node} node - Le nœud XML à convertir
- * @param {Boolean} isRoot - Si vrai, ignore les attributs (déjà portés par data- sur le script)
- */
-function xmlToJSON(node, isRoot = false) {
-    let obj = {};
-    
-    // Gestion des attributs dans le JSON
-    // Si ce n'est pas la racine, les attributs XML deviennent des @key
-    if (!isRoot) {
-        Array.from(node.attributes).forEach(attr => {
-            obj[`@${attr.name}`] = attr.value;
-        });
-    }
-
-    // Traitement des enfants
-    Array.from(node.childNodes).forEach(child => {
-        if (child.nodeType === 1) {
-            const key = child.nodeName;
-            // Récursion : isRoot passe à false pour tous les enfants
-            const value = (child.childElementCount > 0 || child.attributes.length > 0) 
-                ? xmlToJSON(child, false) 
-                : child.textContent;
-            
-            if (key === 'item') {
-                if (!Array.isArray(obj)) obj = [];
-                obj.push(value);
-            } else {
-                obj[key] = value;
+        if (fragment) {
+            el._ariaTemplate = fragment;
+            // On s'assure que le template reste le premier enfant en mode hydrated
+            if (el.getAttribute('dom-state') !== 'hydrated' && !el.querySelector('template')) {
+                const tplTag = document.createElement('template');
+                tplTag.content.appendChild(fragment.cloneNode(true));
+                el.prepend(tplTag);
             }
         }
     });
-    
-    return (Object.keys(obj).length === 0 && node.textContent && !Array.isArray(obj)) 
-        ? node.textContent 
-        : obj;
-}
-
-/**
- * INITIALISATION SÉCURISÉE
- */
-const init = () => {
-    if (typeof document.model === 'undefined') {
-        document.model = document.implementation.createDocument(null, "model");
-    }
-
-    // 1. Verrouiller pour l'import initial
-    isSyncing = true;
-
-    // 2. Importer les scripts existants dans le modèle
-    document.querySelectorAll('script[model]').forEach(script => {
-        syncModelNode(script);
-    });
-
-    // 3. Activer les observers
-    domObserver.observe(document.documentElement, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-        attributes: true,
-        attributeFilter: ['model', 'type', 'id']
-    });
-
-    modelObserver.observe(document.model.documentElement, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        characterData: true
-    });
-
-    // 4. Libérer le verrou
-    setTimeout(() => { isSyncing = false; }, 0);
-    console.log("AriaML: DataBinding initialisé.");
 };
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-} else {
-    init();
-}
+/**
+ * 2. UTILITAIRES XPATH
+ */
+const evaluateXPath = (path, contextNode) => {
+    try {
+        const doc = contextNode.ownerDocument || contextNode;
+        const result = doc.evaluate(path, contextNode, null, XPathResult.ANY_TYPE, null);
+        
+        switch (result.resultType) {
+            case XPathResult.STRING_TYPE: return result.stringValue;
+            case XPathResult.NUMBER_TYPE: return result.numberValue;
+            case XPathResult.BOOLEAN_TYPE: return result.booleanValue;
+            case XPathResult.UNORDERED_NODE_ITERATOR_TYPE: {
+                const nodes = [];
+                let n;
+                while (n = result.iterateNext()) nodes.push(n);
+                return nodes;
+            }
+        }
+    } catch (e) {
+        console.warn(`AriaML XPath Error: ${path}`, e);
+        return null;
+    }
+};
+
+/**
+ * 3. MOTEUR DE RENDU RÉCURSIF
+ */
+const render = (container, contextNode = document.model.documentElement) => {
+    if (!contextNode) return;
+
+    const elements = container.querySelectorAll('[ref], [each]');
+    
+    // Pour ne pas traiter les enfants d'un élément qui va lui-même être rendu (récursion contrôlée)
+    const topLevelElements = Array.from(elements).filter(el => {
+        const parent = el.parentElement.closest('[ref], [each]');
+        return !parent || parent === container;
+    });
+
+    topLevelElements.forEach(el => {
+        const refPath = el.getAttribute('ref');
+        const eachPath = el.getAttribute('each');
+        
+        // Nettoyage des rendus précédents (on garde le template)
+        const template = el.firstElementChild;
+        while (el.lastElementChild && el.lastElementChild !== template) {
+            el.removeChild(el.lastElementChild);
+        }
+
+        // CAS 1 : EACH (Itération)
+        let collection = [];
+        if (eachPath) {
+            const result = evaluateXPath(eachPath, contextNode);
+            collection = Array.isArray(result) ? result : [];
+            
+            if (collection.length > 0) {
+                collection.forEach(itemNode => {
+                    const clone = el._ariaTemplate.cloneNode(true);
+                    // Rendu récursif du clone avec le nouveau contexte
+                    const wrapper = document.createElement('div'); // Temp pour querySelectorAll
+                    wrapper.appendChild(clone);
+                    render(wrapper, itemNode);
+                    while (wrapper.firstChild) el.appendChild(wrapper.firstChild);
+                });
+                return; // On a fini pour cet élément
+            }
+        }
+
+        // CAS 2 : REF (ou Fallback de EACH)
+        if (refPath) {
+            const target = evaluateXPath(refPath, contextNode);
+            
+            // Si c'est un nœud XML (Complexe)
+            if (target instanceof Node && target.nodeType === 1) {
+                const clone = el._ariaTemplate.cloneNode(true);
+                const wrapper = document.createElement('div');
+                wrapper.appendChild(clone);
+                render(wrapper, target);
+                while (wrapper.firstChild) el.appendChild(wrapper.firstChild);
+            } 
+            // Si c'est un scalaire (String, Nombre, ou Fallback)
+            else {
+                const val = (target === null || target === false) ? "" : String(target);
+                
+                if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                    if (document.activeElement !== el) el.value = val;
+                } else if (el.tagName === 'SELECT') {
+                    el.value = val;
+                } else {
+                    // Injection après le template
+                    el.appendChild(document.createTextNode(val));
+                }
+            }
+        }
+    });
+};
+
+/**
+ * 4. INITIALISATION DU BINDING
+ */
+const initDataBinding = () => {
+    const ariaRoot = document.querySelector('aria-ml') || document.documentElement;
+    const state = ariaRoot.getAttribute('dom-state') || 'dry';
+
+    compileTemplates(ariaRoot);
+
+    if (state === 'dry') {
+        render(ariaRoot);
+        ariaRoot.setAttribute('dom-state', 'hydrated');
+    }
+    
+    console.log("AriaML: DataBinding Hydrated.");
+};
+
+// Export ou auto-init
+window.addEventListener('model-ready', initDataBinding);
