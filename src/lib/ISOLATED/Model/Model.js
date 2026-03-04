@@ -30,9 +30,10 @@ const syncModelNode = (script) => {
     const content = script.textContent.trim();
     if (!content) return;
 
-    try {
+try {
         if (type.includes('json')) {
             const data = JSON.parse(content);
+            
             const build = (obj, parent) => {
                 if (Array.isArray(obj)) {
                     obj.forEach(item => {
@@ -42,15 +43,23 @@ const syncModelNode = (script) => {
                     });
                 } else if (typeof obj === 'object' && obj !== null) {
                     Object.entries(obj).forEach(([key, val]) => {
-                        const cleanKey = key.replace(/[^a-zA-Z0-9_]/g, '_');
-                        const el = document.model.createElement(cleanKey);
-                        parent.appendChild(el);
-                        build(val, el);
+                        if (key.startsWith('@')) {
+                            // Cas de l'attribut : @id -> id="..."
+                            const attrName = key.slice(1).replace(/[^a-zA-Z0-9_]/g, '_');
+                            parent.setAttribute(attrName, val);
+                        } else {
+                            // Cas du nœud enfant
+                            const cleanKey = key.replace(/[^a-zA-Z0-9_]/g, '_');
+                            const el = document.model.createElement(cleanKey);
+                            parent.appendChild(el);
+                            build(val, el);
+                        }
                     });
                 } else {
                     parent.textContent = obj;
                 }
             };
+            
             build(data, rootNode);
         } else if (type.includes('xml')) {
             const parser = new DOMParser();
