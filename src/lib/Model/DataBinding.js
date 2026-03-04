@@ -111,6 +111,8 @@ function xmlToJSON(node, isRoot = false) {
         : obj;
 }
 
+return;
+
 /**
  * INITIALISATION
  */
