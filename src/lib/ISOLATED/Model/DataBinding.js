@@ -119,7 +119,10 @@ const render = (container, contextNode = document.model.documentElement) => {
         // CAS 2 : REF (ou Fallback de EACH)
         if (refPath) {
             const target = evaluateXPath(refPath, contextNode);
-            
+
+console.warn(el, refPath, target, typeof target, target.nodeType)
+console.log(target)
+
             // Si c'est un nœud XML (Complexe)
             if (target instanceof Node && target.nodeType === 1) {
                 const clone = el.modelTemplate.cloneNode(true);
