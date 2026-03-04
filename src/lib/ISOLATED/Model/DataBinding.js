@@ -1,295 +1,149 @@
-// 1. jsonToXml avec détection de cycle via Set
-function jsonToXml(jsonData, nodeName = "root") {
-    const doc = document.implementation.createDocument(null, nodeName);
-    const root = doc.documentElement;
-    const seen = new Set(); // Pour le suivi des références circulaires
+/**
+ * DataBinding.js : Synchronisation miroir entre document.model et les balises <script>
+ */
 
-    function build(data, parent) {
-        if (data === null || data === undefined) return;
+let isSyncing = false; // Verrou synchrone pour éviter les boucles d'observation
 
-        // Détection de cycle pour les objets et tableaux
-        if (typeof data === "object") {
-            if (seen.has(data)) {
-                parent.setAttribute("aria-ml-cycle", "true");
-                return;
-            }
-            seen.add(data);
+/**
+ * 1. OBSERVER DU DOM (Vers document.model)
+ * Surveille les scripts [model][type][id]
+ */
+const domObserver = new MutationObserver((mutations) => {
+    if (isSyncing) return;
+    
+    mutations.forEach(mutation => {
+        // Ajout ou modification de contenu/attributs
+        const target = mutation.target;
+        if (target.nodeName === 'SCRIPT' && target.hasAttribute('model')) {
+            syncModelNode(target);
         }
+        
+        // Gestion des nouveaux nœuds injectés
+        mutation.addedNodes.forEach(node => {
+            if (node.nodeName === 'SCRIPT' && node.hasAttribute('model')) {
+                syncModelNode(node);
+            }
+        });
+    });
+});
 
-        if (Array.isArray(data)) {
-            data.forEach(item => {
-                const itemNode = doc.createElement("item");
-                parent.appendChild(itemNode);
-                build(item, itemNode);
-            });
-        } else if (typeof data === "object") {
-            Object.entries(data).forEach(([key, value]) => {
-                const cleanKey = key.includes(":") ? key.split(":")[1] : key;
+/**
+ * 2. OBSERVER DU MODÈLE (Vers le DOM)
+ * Surveille document.model pour mettre à jour ou créer les <script>
+ */
+const modelObserver = new MutationObserver((mutations) => {
+    if (isSyncing) return;
+    isSyncing = true; // On verrouille
 
-                if (cleanKey.startsWith("@")) {
-                    parent.setAttribute(cleanKey.slice(1), value);
-                } else {
-                    const child = doc.createElement(cleanKey);
-                    parent.appendChild(child);
-                    build(value, child);
+    mutations.forEach(mutation => {
+        // On s'intéresse aux enfants directs de <model>
+        const nodes = mutation.type === 'childList' ? mutation.target.childNodes : [mutation.target];
+        
+        nodes.forEach(xmlNode => {
+            if (xmlNode.nodeType !== 1) return; // Uniquement les éléments
+            
+            const id = xmlNode.nodeName;
+            let script = document.getElementById(id);
+            
+            // Si le script n'existe pas, on le crée
+            if (!script) {
+                script = document.createElement('script');
+                script.id = id;
+                script.setAttribute('type', 'json');
+                script.setAttribute('model', '');
+                
+                // Insertion : dans <aria-ml> ou à défaut dans <html>
+                const container = document.querySelector('aria-ml') || document.documentElement;
+                container.appendChild(script);
+            }
+
+            // Mise à jour du contenu du script selon son type
+            const type = script.getAttribute('type') || 'json';
+            if (type.includes('json')) {
+                script.textContent = JSON.stringify(xmlToJSON(xmlNode), null, 4);
+            } else if (type.includes('xml')) {
+                script.textContent = new XMLSerializer().serializeToString(xmlNode);
+            }
+            
+            // Mise à jour des attributs data-* (le reflet inverse)
+            Array.from(xmlNode.attributes).forEach(attr => {
+                if (attr.name.startsWith('data-')) {
+                    script.setAttribute(attr.name, attr.value);
                 }
             });
-        } else {
-            parent.textContent = data;
+        });
+    });
+
+    isSyncing = false; // On déverrouille
+});
+
+/**
+ * UTILITAIRE : Conversion XML vers JSON pour la persistance
+ */
+function xmlToJSON(node) {
+    let obj = {};
+    
+    // Attributs -> @key
+    Array.from(node.attributes).forEach(attr => {
+        if (!attr.name.startsWith('data-')) {
+            obj[`@${attr.name}`] = attr.value;
         }
-    }
+    });
 
-    build(jsonData, root);
-    return doc;
-}
-
-// 2. renderEach optimisé pour la persistance d'identité
-function renderEach(container, xmlNode) {
-    const xpath = container.getAttribute("each");
-    const template = container.querySelector("template") || container.firstElementChild;
-    if (!xpath || !template) return;
-
-    const results = xmlNode.ownerDocument.evaluate(
-        xpath, xmlNode, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null
-    );
-
-    const currentElements = Array.from(container.children).filter(el => el.tagName !== "TEMPLATE");
-    const newCount = results.snapshotLength;
-
-    // On ajuste la taille de la liste HTML par rapport aux résultats XML
-    for (let i = 0; i < Math.max(newCount, currentElements.length); i++) {
-        if (i < newCount) {
-            const itemNode = results.snapshotItem(i);
-            let el = currentElements[i];
-
-            if (!el) {
-                // Création si l'élément n'existe pas encore à cet index
-                const clone = (template.tagName === "TEMPLATE") 
-                    ? template.content.cloneNode(true) 
-                    : template.cloneNode(true);
-                el = clone.firstElementChild || clone;
-                container.appendChild(clone);
-            }
-
-            // Mise à jour du lien d'identité
-            el._bindingNode = itemNode;
+    // Enfants
+    Array.from(node.childNodes).forEach(child => {
+        if (child.nodeType === 1) { // Element
+            const key = child.nodeName;
+            const value = child.childElementCount > 0 || child.attributes.length > 0 
+                ? xmlToJSON(child) 
+                : child.textContent;
             
-            // Hydratation récursive
-            processBindings(el, itemNode);
-        } else {
-            // Suppression des éléments en trop
-            currentElements[i].remove();
-        }
-    }
-}
-
-// 3. evaluateRef (Inchangé, reste le coeur de la mutation ciblée)
-function evaluateRef(htmlElement, xmlNode, hook = null) {
-    const xpath = htmlElement.getAttribute("ref");
-    if (!xpath) return;
-
-    const result = xmlNode.ownerDocument.evaluate(
-        xpath, xmlNode, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-    );
-    const targetNode = result.singleNodeValue;
-
-    if (targetNode) {
-        let newValue = (targetNode.nodeType === Node.ATTRIBUTE_NODE) ? targetNode.value : targetNode.textContent;
-
-        if (hook) newValue = hook({ path: xpath, value: newValue, element: htmlElement, node: targetNode });
-
-        const isInput = htmlElement.value !== undefined;
-        const currentValue = isInput ? htmlElement.value : htmlElement.textContent;
-
-        if (currentValue !== newValue) {// 1. jsonToXml avec détection de cycle via Set
-function jsonToXml(jsonData, nodeName = "root") {
-    const doc = document.implementation.createDocument(null, nodeName);
-    const root = doc.documentElement;
-    const seen = new Set(); // Pour le suivi des références circulaires
-
-    function build(data, parent) {
-        if (data === null || data === undefined) return;
-
-        // Détection de cycle pour les objets et tableaux
-        if (typeof data === "object") {
-            if (seen.has(data)) {
-                parent.setAttribute("aria-ml-cycle", "true");
-                return;
+            // Gestion des listes (item -> tableau)
+            if (key === 'item') {
+                if (!Array.isArray(obj)) obj = [];
+                obj.push(value);
+            } else {
+                obj[key] = value;
             }
-            seen.add(data);
         }
-
-        if (Array.isArray(data)) {
-            data.forEach(item => {
-                const itemNode = doc.createElement("item");
-                parent.appendChild(itemNode);
-                build(item, itemNode);
-            });
-        } else if (typeof data === "object") {
-            Object.entries(data).forEach(([key, value]) => {
-                const cleanKey = key.includes(":") ? key.split(":")[1] : key;
-
-                if (cleanKey.startsWith("@")) {
-                    parent.setAttribute(cleanKey.slice(1), value);
-                } else {
-                    const child = doc.createElement(cleanKey);
-                    parent.appendChild(child);
-                    build(value, child);
-                }
-            });
-        } else {
-            parent.textContent = data;
-        }
-    }
-
-    build(jsonData, root);
-    return doc;
+    });
+    
+    return Object.keys(obj).length === 0 && node.textContent ? node.textContent : obj;
 }
 
-// 2. renderEach optimisé pour la persistance d'identité
-function renderEach(container, xmlNode) {
-    const xpath = container.getAttribute("each");
-    const template = container.querySelector("template") || container.firstElementChild;
-    if (!xpath || !template) return;
-
-    const results = xmlNode.ownerDocument.evaluate(
-        xpath, xmlNode, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null
-    );
-
-    const currentElements = Array.from(container.children).filter(el => el.tagName !== "TEMPLATE");
-    const newCount = results.snapshotLength;
-
-    // On ajuste la taille de la liste HTML par rapport aux résultats XML
-    for (let i = 0; i < Math.max(newCount, currentElements.length); i++) {
-        if (i < newCount) {
-            const itemNode = results.snapshotItem(i);
-            let el = currentElements[i];
-
-            if (!el) {
-                // Création si l'élément n'existe pas encore à cet index
-                const clone = (template.tagName === "TEMPLATE") 
-                    ? template.content.cloneNode(true) 
-                    : template.cloneNode(true);
-                el = clone.firstElementChild || clone;
-                container.appendChild(clone);
-            }
-
-            // Mise à jour du lien d'identité
-            el._bindingNode = itemNode;
-            
-            // Hydratation récursive
-            processBindings(el, itemNode);
-        } else {
-            // Suppression des éléments en trop
-            currentElements[i].remove();
-        }
+/**
+ * INITIALISATION
+ */
+const init = () => {
+    // Initialisation du modèle si nécessaire
+    if (typeof document.model === 'undefined') {
+        document.model = document.implementation.createDocument(null, "model");
     }
-}
 
-// 3. evaluateRef (Inchangé, reste le coeur de la mutation ciblée)
-function evaluateRef(htmlElement, xmlNode, hook = null) {
-    const xpath = htmlElement.getAttribute("ref");
-    if (!xpath) return;
-
-    const result = xmlNode.ownerDocument.evaluate(
-        xpath, xmlNode, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-    );
-    const targetNode = result.singleNodeValue;
-
-    if (targetNode) {
-        let newValue = (targetNode.nodeType === Node.ATTRIBUTE_NODE) ? targetNode.value : targetNode.textContent;
-
-        if (hook) newValue = hook({ path: xpath, value: newValue, element: htmlElement, node: targetNode });
-
-        const isInput = htmlElement.value !== undefined;
-        const currentValue = isInput ? htmlElement.value : htmlElement.textContent;
-
-        if (currentValue !== newValue) {
-            isInput ? (htmlElement.value = newValue) : (htmlElement.textContent = newValue);
-        }
-    }
-}
-
-// 4. Coordination Globale
-function processBindings(rootElement, xmlNode) {
-    // On traite les références directes
-    const refs = rootElement.querySelectorAll("[ref]");
-    refs.forEach(el => {
-        const scope = el.closest("[_bindingNode]")?._bindingNode || xmlNode;
-        evaluateRef(el, scope);
+    // Lancement de l'observation du DOM
+    domObserver.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ['model', 'type', 'id']
     });
 
-    // On traite les itérations
-    const eachs = rootElement.querySelectorAll("[each]");
-    eachs.forEach(el => {
-        const scope = el.closest("[_bindingNode]")?._bindingNode || xmlNode;
-        renderEach(el, scope);
-    });
-}
-            isInput ? (htmlElement.value = newValue) : (htmlElement.textContent = newValue);
-        }
-    }
-}
-
-
-// Cache pour stocker les arbres XML par ID de script (NodeCache)
-const modelCache = new Map();
-
-function getXmlModel(element) {
-    // 1. Chercher l'ID défini ou prendre le premier script JSON
-    const modelId = element.getAttribute("model");
-    const script = modelId 
-        ? document.getElementById(modelId) 
-        : document.querySelector('script[type*="json"]');
-
-    if (!script) return null;
-
-    // 2. Gestion du cache (NodeCache) pour la performance
-    if (modelCache.has(script)) {
-        return modelCache.get(script);
-    }
-
-    // 3. Conversion et mise en cache
-    try {
-        const data = JSON.parse(script.textContent);
-        const xmlDoc = jsonToXml(data, modelId || "default");
-        modelCache.set(script, xmlDoc);
-        return xmlDoc;
-    } catch (e) {
-        console.error("Erreur de parsing JSON pour le modèle:", e);
-        return null;
-    }
-}
-
-// 4. Coordination Globale
-function processBindings(rootElement, currentXmlNode = null) {
-    // Si l'élément définit son propre modèle, on change de contexte XML
-    let activeXmlNode = currentXmlNode;
-    if (rootElement.hasAttribute && rootElement.hasAttribute("model")) {
-        const newModel = getXmlModel(rootElement);
-        if (newModel) activeXmlNode = newModel.documentElement;
-    }
-
-    // Si on n'a toujours pas de contexte, on cherche le modèle par défaut
-    if (!activeXmlNode && rootElement === document.body) {
-        const defaultModel = getXmlModel(rootElement);
-        if (defaultModel) activeXmlNode = defaultModel.documentElement;
-    }
-
-    if (!activeXmlNode) return;
-
-    // Traitement des références directes
-    const refs = rootElement.querySelectorAll("[ref]");
-    refs.forEach(el => {
-        // Respect du scope : priorité au bindingNode parent, sinon racine du modèle actif
-        const scope = el.closest("[_bindingNode]")?._bindingNode || activeXmlNode;
-        evaluateRef(el, scope);
+    // Lancement de l'observation du modèle
+    modelObserver.observe(document.model.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        characterData: true
     });
 
-    // Traitement des itérations
-    const eachs = rootElement.querySelectorAll("[each]");
-    eachs.forEach(el => {
-        const scope = el.closest("[_bindingNode]")?._bindingNode || activeXmlNode;
-        renderEach(el, scope);
-    });
+    // Premier passage synchrone sur les scripts existants
+    document.querySelectorAll('script[model]').forEach(syncModelNode);
+};
+
+// Auto-amorçage selon l'état du document
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    init();
 }
