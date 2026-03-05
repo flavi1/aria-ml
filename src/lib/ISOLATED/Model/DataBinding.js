@@ -2,6 +2,57 @@
  * DataBinding.js - Moteur de rendu et de liaison AriaML v2.0
  */
 
+const syncNodeValue = (el, boundNode) => {
+    // Extraction de la valeur (Attribut ou Élément XML)
+    const val = (boundNode.nodeType === 2) ? boundNode.value : boundNode.textContent;
+
+    if (el.tagName === 'INPUT') {
+        const type = el.type.toLowerCase();
+        
+        if (type === 'checkbox' || type === 'radio') {
+            // Un booléen "true" ou une correspondance de valeur active le cochage
+            const isChecked = (val === "true" || val === el.value);
+            if (el.checked !== isChecked) el.checked = isChecked;
+        } 
+        else {
+            // Protection du curseur utilisateur pour les champs texte
+            if (document.activeElement !== this) el.value = val;
+        }
+    } 
+    else if (el.tagName === 'TEXTAREA') {
+        if (document.activeElement !== this) el.value = val;
+    } 
+    else if (el.tagName === 'SELECT') {
+        el.value = val;
+    } 
+    else {
+        // Nettoyage et injection de texte simple pour les éléments structurels
+        // On évite innerHTML pour des raisons de sécurité et de performance
+        el.textContent = val;
+    }
+}
+
+/**
+ * Extension AriaML : Liaison intelligente entre un nœud XML et un élément HTML
+ * @param {Node|NodeList} target - Le nœud XML (ou collection) cible
+ */
+HTMLElement.prototype.bindNode = function(target) {
+    if (!target) return;
+
+    // Résolution du nœud (prend le premier si c'est une liste)
+    const boundNode = (target instanceof NodeList || Array.isArray(target)) 
+        ? target[0] 
+        : target;
+
+    if (!boundNode) return;
+    
+	syncNodeValue(this, boundNode);
+};
+
+Node.prototype.getBindedNodes = function() {
+	return ['ok']
+}
+
 const TemplateRegistry = new Map();
 
 /**
@@ -117,39 +168,28 @@ const render = (container, contextNode = document.model.documentElement) => {
         }
 
         // CAS 2 : REF (ou Fallback de EACH)
-        if (refPath) {
-            const target = evaluateXPath(refPath, contextNode);
-
-console.warn(el, refPath, target, typeof target, target.nodeType)
-console.log(target)
-
-            // Si c'est un nœud XML (Complexe)
-            if (target instanceof Node && target.nodeType === 1) {
-                const clone = el.modelTemplate.cloneNode(true);
-                const wrapper = document.createElement('div');
-                wrapper.appendChild(clone);
-                
-                render(wrapper, target);
-                
-                while (wrapper.firstChild) {
-                    const child = wrapper.firstChild;
-                    if (child.nodeType === 1) child._XPathContext = target;
-                    el.appendChild(child);
-                }
-            } 
-            // Si c'est un scalaire (String, Nombre, ou Fallback)
-            else {
-                const val = (target === null || target === false) ? "" : String(target);
-                
-                if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
-                    if (document.activeElement !== el) el.value = val;
-                } else if (el.tagName === 'SELECT') {
-                    el.value = val;
-                } else {
-                    el.appendChild(document.createTextNode(val));
-                }
-            }
-        }
+		if (refPath) {
+			const target = evaluateXPath(refPath, contextNode);
+			
+			// Si c'est un ÉLÉMENT XML (Nœud complexe avec enfants/attributs)
+			if (target instanceof Node && target.nodeType === 1 && (target.childElementCount > 0 || target.attributes.length > 0)) {
+				const clone = el.modelTemplate.cloneNode(true); // Utilise votre nouveau nom
+				const wrapper = document.createElement('div');
+				wrapper.appendChild(clone);
+				
+				render(wrapper, target);
+				
+				while (wrapper.firstChild) {
+					const child = wrapper.firstChild;
+					if (child.nodeType === 1) child._XPathContext = target;
+					el.appendChild(child);
+				}
+			} 
+			// Si c'est un scalaire ou un nœud terminal
+			else if (target) {
+				el.bindNode(target);
+			}
+		}
     });
 };
 
