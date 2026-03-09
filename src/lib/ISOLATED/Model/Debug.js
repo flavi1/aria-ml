@@ -21,7 +21,7 @@ function getPathSelector(el, rootNode = null) {
         }
         current = parent;
     }
-    return path.join(' > ');
+    return ':scope > '+path.join(' > ');
 }
 
 (function() {
@@ -37,25 +37,58 @@ function getPathSelector(el, rootNode = null) {
             this.setupSourceObserver(sourceNode, modelElement);
 
             // Premier rendu : on enveloppe dans model- pour la gestion des Custom Elements
-            modelElement.innerHTML = '<model->' + sourceNode.innerHTML + '</model->';
+            modelElement.innerHTML = '<model->' + this.addSuffixes(sourceNode.innerHTML) + '</model->';
         },
 
         /**
          * Source -> Vue
          */
         setupSourceObserver(sourceNode, view) {
-            const observer = new MutationObserver(() => {
+            const observer = new MutationObserver((mutations) => {
                 if (this.isSyncing) return;
-                
+
                 this.isSyncing = true;
                 try {
-                    // On synchronise le contenu interne de <model->
-                    const wrapper = view.querySelector('model-');
-                    if (wrapper) {
-                        wrapper.innerHTML = this.addSuffixes(sourceNode.innerHTML);
-                    } else {
-                        view.innerHTML = '<model->' + this.addSuffixes(sourceNode.innerHTML) + '</model->';
-                    }
+					let modelView = view.querySelector(':scope > model-');
+					if(!modelView) return;
+					
+					mutations.forEach(m => {
+						const el = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+						if (!el || el == sourceNode) return;
+						
+						// On calcule le sélecteur RELATIF au wrapper <model>
+						const sel = getPathSelector(el, sourceNode);
+						
+						if(!sel) return;
+						
+						const viewTarget = modelView.querySelector(sel);
+console.error(sourceNode, modelView)	
+console.warn('src => view', el, viewTarget, m.type, sel)
+
+						if (!viewTarget) {
+							console.warn(sel + ' non trouvé dans model.');
+							return;
+						}
+						
+						if (m.type === 'attributes') {
+							// Ici m.target est l'Element, on peut utiliser getAttribute
+							let k = m.attributeName
+							if(m.target.getAttribute(k) != viewTarget.getAttribute(k))
+								viewTarget.setAttribute(k, m.target.getAttribute(k));
+						}
+						else if (m.type === 'characterData') {
+							// Ici m.target est le TextNode, on synchronise son contenu
+							if(viewTarget.textContent != m.target.textContent)
+								viewTarget.textContent = m.target.textContent;
+						}
+						else if (m.type === 'childList') {
+							// Ici m.target est l'Element parent des nœuds ajoutés/supprimés
+							let innerHTML = this.addSuffixes(m.target.innerHTML);
+							if(viewTarget.innerHTML != innerHTML)
+								viewTarget.innerHTML = innerHTML;
+						}
+						
+					})
                 } finally {
                     setTimeout(() => { this.isSyncing = false; }, 0);
                 }
@@ -77,6 +110,9 @@ function getPathSelector(el, rootNode = null) {
                 observer.disconnect();
 
 				try {
+					let modelView = view.querySelector(':scope > model-');
+					if(!modelView) return;
+					
 					mutations.forEach(m => {
 						// Résolution de l'élément porteur du sélecteur
 						// Si m.target est un nœud de texte (3), on prend le parent.
@@ -85,14 +121,14 @@ function getPathSelector(el, rootNode = null) {
 						if (!el || el == view) return;
 
 						// On calcule le sélecteur RELATIF au wrapper <model->
-						const sel = getPathSelector(el, view);
+						const sel = getPathSelector(el, modelView);
 						
-						if(!sel)
-							return;
+						if(!sel) return;
 
 						// Si sel est vide, c'est qu'on est sur le root (view lui-même)
 						const sourceTarget = document.model.dom.querySelector(sel);
 
+console.error(modelView, sourceTarget)
 console.warn('vue => src', el, sourceTarget, m.type)
 
 						if (!sourceTarget) {
@@ -102,22 +138,26 @@ console.warn('vue => src', el, sourceTarget, m.type)
 
 						if (m.type === 'attributes') {
 							// Ici m.target est l'Element, on peut utiliser getAttribute
-							sourceTarget.setAttribute(m.attributeName, m.target.getAttribute(m.attributeName));
+							let k = m.attributeName
+							if(m.target.getAttribute(k) != sourceTarget.getAttribute(k))
+								sourceTarget.setAttribute(k, m.target.getAttribute(k));
 						}
 						else if (m.type === 'characterData') {
 							// Ici m.target est le TextNode, on synchronise son contenu
-							sourceTarget.textContent = m.target.textContent;
+							if(sourceTarget.textContent != m.target.textContent)
+								sourceTarget.textContent = m.target.textContent;
 						}
 						else if (m.type === 'childList') {
 							// Ici m.target est l'Element parent des nœuds ajoutés/supprimés
-							sourceTarget.innerHTML = this.cleanSuffixes(m.target.innerHTML);
+							let innerHTML = this.cleanSuffixes(m.target.innerHTML);
+							if(sourceTarget.innerHTML != innerHTML)
+								sourceTarget.innerHTML = innerHTML;
 						}
 					});
 
 					// Normalisation de TOUS les tags : ajout du suffixe '-'
 					// Note: On utilise innerHTML ici, ce qui va recréer le DOM de la vue.
 					// Le verrou isSyncing empêchera la boucle.
-					view.innerHTML = this.addSuffixes(view.innerHTML);
 
 				} finally {
 					observer.observe(view, { 
@@ -126,6 +166,8 @@ console.warn('vue => src', el, sourceTarget, m.type)
 					setTimeout(() => { this.isSyncing = false; }, 0);
 				}
             });
+            
+            //view.innerHTML = this.addSuffixes(view.innerHTML);
 
             observer.observe(view, { 
                 childList: true, subtree: true, attributes: true, characterData: true 
