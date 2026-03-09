@@ -16,11 +16,11 @@ const syncNodeValue = (el, boundNode) => {
         } 
         else {
             // Protection du curseur utilisateur pour les champs texte
-            if (document.activeElement !== this) el.value = val;
+            if (document.activeElement !== el) el.value = val;
         }
     } 
     else if (el.tagName === 'TEXTAREA') {
-        if (document.activeElement !== this) el.value = val;
+        if (document.activeElement !== el) el.value = val;
     } 
     else if (el.tagName === 'SELECT') {
         el.value = val;
@@ -31,27 +31,48 @@ const syncNodeValue = (el, boundNode) => {
         el.textContent = val;
     }
 }
+const ModelBoundNodes = new Map();
+
+// Extension de la Map pour gérer les mises à jour ciblées
+ModelBoundNodes.updateBinding = function(xmlNode) {
+    if (this.has(xmlNode)) {
+        const elements = this.get(xmlNode);
+        elements.forEach(el => {
+            // Sécurité anti-fuite : on retire les éléments qui ne sont plus dans le DOM
+            if (!el.isConnected) {
+                elements.delete(el);
+            } else {
+                syncNodeValue(el, xmlNode);
+            }
+        });
+    }
+};
+
+Node.prototype.getBindedNodes = function() {
+    return ModelBoundNodes.has(this) ? Array.from(ModelBoundNodes.get(this)) : [];
+};
 
 /**
- * Extension AriaML : Liaison intelligente entre un nœud XML et un élément HTML
- * @param {Node|NodeList} target - Le nœud XML (ou collection) cible
+ * Extension AriaML : Liaison intelligente et enregistrement
  */
 HTMLElement.prototype.bindNode = function(target) {
     if (!target) return;
 
-    // Résolution du nœud (prend le premier si c'est une liste)
     const boundNode = (target instanceof NodeList || Array.isArray(target)) 
         ? target[0] 
         : target;
 
     if (!boundNode) return;
     
-	syncNodeValue(this, boundNode);
-};
+    // 1. Enregistrement de la liaison DOM HTML <-> Noeud XML
+    if (!ModelBoundNodes.has(boundNode)) {
+        ModelBoundNodes.set(boundNode, new Set());
+    }
+    ModelBoundNodes.get(boundNode).add(this);
 
-Node.prototype.getBindedNodes = function() {
-	return ['ok']
-}
+    // 2. Synchronisation de la valeur initiale
+    syncNodeValue(this, boundNode);
+};
 
 const TemplateRegistry = new Map();
 

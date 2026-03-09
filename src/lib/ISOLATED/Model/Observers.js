@@ -25,14 +25,21 @@ const domObserver = new MutationObserver((mutations) => {
 });
 
 /**
- * 2. OBSERVER DU MODÈLE (Vers le DOM & Déclenchement du Rendu)
+ * 2. OBSERVER DU MODÈLE (Routage Render vs Binding)
  */
 const modelObserver = new MutationObserver((mutations) => {
+	
+console.log('MODEL OBSERVE!', mutations)
+	
     if (isSyncing) return;
     isSyncing = true;
 
+    let needsRender = false;
+    const nodesToUpdate = new Set();
+
     try {
-        const rootChildren = Array.from(document.model.documentElement.childNodes)
+        // A. Mise à jour des scripts de stockage (Miroir) - [inchangé]
+        const rootChildren = Array.from(document.model.dom.childNodes)
                                  .filter(n => n.nodeType === 1);
         
         rootChildren.forEach(xmlNode => {
@@ -64,8 +71,25 @@ const modelObserver = new MutationObserver((mutations) => {
             }
         });
 
-        if (typeof render === 'function') {
+        // B. ANALYSE DES MUTATIONS POUR LE ROUTAGE
+        mutations.forEach(mutation => {
+            if (mutation.type === 'childList') {
+                needsRender = true; // Ajout/Suppression => nécessite une modification structurelle
+            } else if (mutation.type === 'characterData') {
+                // C'est le nœud texte qui mute, le porteur de la donnée est son parent XML
+                nodesToUpdate.add(mutation.target.parentNode);
+            } else if (mutation.type === 'attributes') {
+                nodesToUpdate.add(mutation.target);
+            }
+        });
+
+        // C. DÉCLENCHEMENT SÉLECTIF
+        if (needsRender && typeof render === 'function') {
             render(document.querySelector('aria-ml') || document.body);
+        } else {
+            nodesToUpdate.forEach(xmlNode => {
+                ModelBoundNodes.updateBinding(xmlNode);
+            });
         }
 
     } finally {
@@ -82,7 +106,7 @@ document.addEventListener('input', (e) => {
     if (!refPath || isSyncing) return;
 
     // Utilisation de _XPathContext pour supporter les chemins relatifs
-    const targetNode = evaluateXPath(refPath, el._XPathContext || document.model.documentElement);
+    const targetNode = evaluateXPath(refPath, el._XPathContext || document.model.dom);
 
     if (targetNode instanceof Node) {
         const newValue = el.type === 'checkbox' ? (el.checked ? "true" : "false") : el.value;
@@ -131,7 +155,7 @@ const dataBindingObserver = new MutationObserver((mutations) => {
                 if (node.nodeType === 1) {
                     if (node.hasAttribute('ref') || node.hasAttribute('each') || node.querySelector('[ref], [each]')) {
                         compileTemplates(node);
-                        render(node, node._XPathContext || document.model.documentElement);
+                        render(node, node._XPathContext || document.model.dom);
                     }
                 }
             });
@@ -139,7 +163,20 @@ const dataBindingObserver = new MutationObserver((mutations) => {
         if (mutation.type === 'attributes') {
             const target = mutation.target;
             compileTemplates(target);
-            render(target, target._XPathContext || document.model.documentElement);
+            
+            // Si l'attribut ref ou each change, on tente d'abord un updateBinding (scalaires)
+            // avant de retomber sur le render (structurel)
+            const path = target.getAttribute('ref') || target.getAttribute('each');
+            if (path) {
+                const xmlNode = evaluateXPath(path, target._XPathContext || document.model.dom);
+                if (xmlNode) {
+                    if (xmlNode.nodeType === 2 || (xmlNode.nodeType === 1 && xmlNode.childElementCount === 0)) {
+                        target.bindNode(xmlNode); // Mise à jour ciblée
+                    } else {
+                        render(target, target._XPathContext || document.model.dom); // Refonte structurelle
+                    }
+                }
+            }
         }
     });
 });
@@ -149,7 +186,7 @@ const dataBindingObserver = new MutationObserver((mutations) => {
  */
 const initModel = () => {
     if (typeof document.model === 'undefined') {
-        document.model = document.implementation.createDocument(null, "model");
+        createModel();
     }
 
     isSyncing = true;
@@ -162,7 +199,9 @@ const initModel = () => {
         attributeFilter: ['model', 'type', 'id']
     });
 
-    modelObserver.observe(document.model.documentElement, {
+console.log(document.model.dom)
+
+    modelObserver.observe(document.model.dom, {
         childList: true, subtree: true, attributes: true, characterData: true
     });
 
@@ -176,7 +215,7 @@ const initDOMBinding = () => {
     const ariaRoot = document.querySelector('aria-ml') || document.body;
     window.dispatchEvent(new CustomEvent('model-ready'));
     dataBindingObserver.observe(ariaRoot, {
-        childList: true, subtree: true, attributes: true,
+        childList: true, subtree: true, attributes: true, attributeOldValue: true,
         attributeFilter: ['ref', 'each']
     });
     console.log("AriaML: DOM Binding actif.");

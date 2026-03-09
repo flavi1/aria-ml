@@ -1,18 +1,30 @@
+//Model.js :
+
+const createModel = () => {
+	if (typeof document.model != 'undefined')
+		return;
+	
+	document.model = document.implementation.createDocument(null, "model");
+	document.model.dom = document.model.documentElement;
+	
+};
+
 const syncModelNode = (script) => {
     const id = script.id;
     const type = script.getAttribute('type');
     if (!id || !script.hasAttribute('model')) return;
 
-    if (typeof document.model == 'undefined')
-        document.model = document.implementation.createDocument(null, "model");
+    if (typeof document.model == 'undefined') {
+        createModel()
+	}
 
-    let rootNode = document.model.documentElement.querySelector(`:scope > ${id}`);
+    let rootNode = document.model.dom.querySelector(`:scope > ${id}`);
     if (rootNode) {
         while (rootNode.firstChild) rootNode.removeChild(rootNode.firstChild);
         Array.from(rootNode.attributes).forEach(attr => rootNode.removeAttribute(attr.name));
     } else {
         rootNode = document.model.createElement(id);
-        document.model.documentElement.appendChild(rootNode);
+        document.model.dom.appendChild(rootNode);
     }
 
     Array.from(script.attributes).forEach(attr => {
