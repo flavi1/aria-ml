@@ -82,9 +82,12 @@
 					"lib/ISOLATED/BehaviorManager/Patterns.js",
 					"lib/ISOLATED/BehaviorManager/ScrollSpy.js",
 					
-					"lib/ISOLATED/Model/Model.js",
-					"lib/ISOLATED/Model/DataBinding.js",
-					"lib/ISOLATED/Model/Observers.js",
+					"lib/ISOLATED/Model/Utils.js",
+					"lib/ISOLATED/Model/ScriptToModel.js",
+					"lib/ISOLATED/Model/ModelToDoc.js",
+					"lib/ISOLATED/Model/ModelToScript.js",
+					"lib/ISOLATED/Model/DocToModel.js",
+					"lib/ISOLATED/Model/Boot.js",
 					"lib/ISOLATED/Model/Debug.js"
 				],
 				"css": ["lib/css/init.css"],

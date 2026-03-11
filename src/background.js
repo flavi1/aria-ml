@@ -3,6 +3,8 @@
  */
 const api = typeof browser !== "undefined" ? browser : chrome;
 
+const debugForceMainWorld = true;
+
 /**
  * Vérifie si le document est identifié comme AriaML dans le monde ISOLATED.
  */
@@ -10,7 +12,7 @@ async function isAriaMLContext(tabId, frameId) {
     try {
         const [result] = await api.scripting.executeScript({
             target: { tabId: tabId, frameIds: [frameId] },
-            world: 'ISOLATED',
+            world: debugForceMainWorld ? 'MAIN' : 'ISOLATED',
             func: () => {
                 // On vérifie le marqueur posé par start.WEBEXT.js
                 return !!(document._needAriaML || document.querySelector('aria-ml'));
@@ -75,7 +77,7 @@ async function injectAriaResources(tabId, frameId) {
                 await api.scripting.executeScript({
                     target: { tabId: tabId, frameIds: [frameId] },
                     files: [s],
-                    world: (s.includes('/ISOLATED/')) ? 'ISOLATED' : 'MAIN'
+                    world: (s.includes('/ISOLATED/') && !debugForceMainWorld) ? 'ISOLATED' : 'MAIN'
                 });
             }
         }
@@ -96,7 +98,7 @@ api.webNavigation.onCommitted.addListener((details) => {
         // On affiche le message de conversion si nécessaire dans la console ISOLATED
         api.scripting.executeScript({
             target: { tabId: details.tabId, frameIds: [details.frameId] },
-            world: "ISOLATED",
+            world: debugForceMainWorld ? 'MAIN' : 'ISOLATED',
             func: () => {
                 if (document._needAriaML) {
                     console.info('Document converti du AriaML vers HTML par la web extension.');
