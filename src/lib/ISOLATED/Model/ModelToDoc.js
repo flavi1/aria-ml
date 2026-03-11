@@ -1,19 +1,29 @@
-// ModelToDoc.js
-
 /**
  * ModelToDoc.js : XML => UI
  */
 const XMLToHTML = new Map();
+const TemplateRegistry = new Map();
 
 /**
- * Nettoie récursivement les liaisons des nœuds supprimés
+ * Résout dynamiquement le contexte XML d'un élément en remontant l'arbre DOM.
+ * Cherche le _boundNode le plus proche pour permettre les chemins XPath relatifs.
+ */
+const resolveContext = (el) => {
+    let current = el.parentElement;
+    while (current) {
+        if (current._boundNode) return current._boundNode;
+        current = current.parentElement;
+    }
+    return document.model.dom;
+};
+
+/**
+ * Nettoie récursivement les liaisons des nœuds supprimés.
  */
 const cleanupBindings = (xmlNode) => {
-    if (xmlNode.nodeType === 1) { // Element
+    if (xmlNode.nodeType === 1) { 
         XMLToHTML.delete(xmlNode);
-        // Nettoyage des attributs
         Array.from(xmlNode.attributes).forEach(attr => XMLToHTML.delete(attr));
-        // Nettoyage des enfants
         Array.from(xmlNode.childNodes).forEach(cleanupBindings);
     } else {
         XMLToHTML.delete(xmlNode);
@@ -21,12 +31,12 @@ const cleanupBindings = (xmlNode) => {
 };
 
 /**
- * Lie un élément HTML à un nœud XML de façon bidirectionnelle
+ * Lie un élément HTML à un nœud XML (synchronisation bidirectionnelle).
  */
 HTMLElement.prototype.bindNode = function(xmlNode) {
     if (!xmlNode) return;
-    if(xmlNode.length)
-		xmlNode = xmlNode[0];
+    if (xmlNode.length) xmlNode = xmlNode[0];
+    
     this._boundNode = xmlNode;
     
     if (!XMLToHTML.has(xmlNode)) XMLToHTML.set(xmlNode, new Set());
@@ -36,11 +46,10 @@ HTMLElement.prototype.bindNode = function(xmlNode) {
 };
 
 /**
- * Mise à jour ciblée du DOM sans tout redessiner
+ * Mise à jour ciblée du DOM pour un nœud XML modifié.
  */
 const updateLinkedElements = (xmlNode) => {
     const elements = XMLToHTML.get(xmlNode);
-console.warn(xmlNode, elements)
     if (elements) {
         elements.forEach(el => {
             if (!el.isConnected) {
@@ -54,35 +63,30 @@ console.warn(xmlNode, elements)
 
 /**
  * OBSERVER XML => HTML
+ * Surveille les changements dans le modèle XML pour impacter la vue.
  */
 const xmlToDocObserver = new MutationObserver((mutations) => {
 	console.log('## [Observer] ModelToDoc', document.model.sync.ModelToDoc);
     if (!document.model.sync.ModelToDoc) return;
     
-	document.model.sync.DocToModel = false;
+    document.model.sync.DocToModel = false;
 
     mutations.forEach(mutation => {
-        // CAS : RESET GLOBAL (Si le modèle entier est remplacé)
+        // Reset global
         if (mutation.target === document.model || mutation.target.tagName === 'MODEL') {
             XMLToHTML.clear();
             render(document.querySelector('aria-ml') || document.body);
             return;
         }
 
-        // A. MUTATION D'ATTRIBUT
         if (mutation.type === 'attributes') {
             const attrNode = mutation.target.getAttributeNode(mutation.attributeName);
             if (attrNode) updateLinkedElements(attrNode);
         } 
-        
-        // B. MUTATION DE TEXTE
         else if (mutation.type === 'characterData') {
             updateLinkedElements(mutation.target.parentNode);
         } 
-        
-        // C. MUTATION STRUCTURELLE (Add/Remove)
         else if (mutation.type === 'childList') {
-            // 1. Nettoyage des nœuds supprimés
             mutation.removedNodes.forEach(cleanupBindings);
 
             const isStructural = Array.from(mutation.addedNodes)
@@ -90,11 +94,9 @@ const xmlToDocObserver = new MutationObserver((mutations) => {
                 .some(n => n.nodeType === 1);
 
             if (isStructural) {
-                // 2. Stratégie de remontée : on cherche le conteneur HTML lié au parent
                 let currentXML = mutation.target;
                 let containers = null;
 
-                // On remonte l'arbre XML jusqu'à trouver un élément HTML qui l'observe (ex: le <ul> du "each")
                 while (currentXML && currentXML !== document.model) {
                     containers = XMLToHTML.get(currentXML);
                     if (containers && containers.size > 0) break;
@@ -104,7 +106,6 @@ const xmlToDocObserver = new MutationObserver((mutations) => {
                 if (containers) {
                     containers.forEach(c => render(c, currentXML));
                 } else {
-                    // Fallback ultime : re-render global si aucune attache n'est trouvée
                     render(document.querySelector('aria-ml') || document.body);
                 }
             } else {
@@ -118,9 +119,10 @@ const xmlToDocObserver = new MutationObserver((mutations) => {
 
 /**
  * BINDER OBSERVER (HTML => Init)
+ * Intercepte les nouveaux éléments porteurs de directives injectés dans le DOM.
  */
 const BinderObserver = new MutationObserver((mutations) => {
-	console.log('## [Observer] ModelToDoc', document.model.sync.ModelToDoc);
+	console.log('## [Observer] ModelToDoc (binder)', document.model.sync.ModelToDoc);
     if (!document.model.sync.ModelToDoc) return;
     
     mutations.forEach(mutation => {
@@ -128,46 +130,34 @@ const BinderObserver = new MutationObserver((mutations) => {
             mutation.addedNodes.forEach(node => {
                 if (node.nodeType === 1 && (node.hasAttribute('ref') || node.hasAttribute('each'))) {
                     compileTemplates(node);
-                    render(node, node._XPathContext || document.model.dom);
+                    render(node, resolveContext(node));
                 }
             });
         }
     });
 });
 
-
-
-/* model => html */
+/**
+ * Synchronise la valeur d'un élément HTML avec son nœud XML.
+ */
 const syncNodeValue = (el, boundNode) => {
-    // Extraction de la valeur (Attribut ou Élément XML)
     const val = (boundNode.nodeType === 2) ? boundNode.value : boundNode.textContent;
 
-    if (el.tagName === 'INPUT') {
-        const type = el.type.toLowerCase();
-        
-        if (type === 'checkbox' || type === 'radio') {
-            // Un booléen "true" ou une correspondance de valeur active le cochage
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)) {
+        if (el.type === 'checkbox' || el.type === 'radio') {
             const isChecked = (val === "true" || val === el.value);
             if (el.checked !== isChecked) el.checked = isChecked;
-        } 
-        else {
+        } else {
             if (el.value !== val) el.value = val;
         }
     } 
-    else if (el.tagName === 'TEXTAREA') {
-        if (el.value !== val) el.value = val;
-    } 
-    else if (el.tagName === 'SELECT') {
-        el.value = val;
-    } 
     else {
-        // Nettoyage et injection de texte simple pour les éléments structurels
-        // On évite innerHTML pour des raisons de sécurité et de performance
-        el.textContent = val;
+        // Injection texte simple si l'élément n'a pas de structure propre
+        if (!el.hasAttribute('each') && el.children.length === 0) {
+            el.textContent = val;
+        }
     }
-}
-
-const TemplateRegistry = new Map();
+};
 
 /**
  * COMPILATION DES TEMPLATES
@@ -186,15 +176,13 @@ const compileTemplates = (root = document) => {
         if (tplId && TemplateRegistry.has(tplId)) {
             fragment = TemplateRegistry.get(tplId).cloneNode(true);
         } else {
-            const firstChild = el.firstElementChild;
-            if (firstChild && firstChild.tagName === 'TEMPLATE') {
-                fragment = firstChild.content;
-            }
+            const firstChild = el.querySelector(':scope > template');
+            if (firstChild) fragment = firstChild.content;
         }
 
         if (fragment) {
             el.modelTemplate = fragment;
-            if (el.getAttribute('dom-state') !== 'hydrated' && !el.querySelector('template')) {
+            if (el.getAttribute('dom-state') !== 'hydrated' && !el.querySelector(':scope > template')) {
                 const tplTag = document.createElement('template');
                 tplTag.content.appendChild(fragment.cloneNode(true));
                 el.prepend(tplTag);
@@ -203,32 +191,27 @@ const compileTemplates = (root = document) => {
     });
 };
 
-
 /**
- * 3. MOTEUR DE RENDU RÉCURSIF
+ * MOTEUR DE RENDU RÉCURSIF
  */
 const render = (container, contextNode = document.model.dom) => {
     if (!contextNode) return;
 
-    // On récupère tous les porteurs de directives
     const elements = container.querySelectorAll('[ref], [each]');
     
-    // Filtre pour ne traiter que les éléments de premier niveau dans ce conteneur
+    // Traitement des éléments de premier niveau uniquement
     const topLevelElements = Array.from(elements).filter(el => {
-        const parent = el.parentElement.closest('[ref], [each]');
+        const parent = el.parentElement?.closest('[ref], [each]');
         return !parent || parent === container || parent === container.getRootNode();
     });
 
     topLevelElements.forEach(el => {
         const refPath = el.getAttribute('ref');
         const eachPath = el.getAttribute('each');
-        
-        // Sauvegarde du contexte pour l'auto-édition (Observers.js)
-        el._XPathContext = contextNode;
 
-        // Nettoyage (on préserve le premier enfant <template>)
+        // Nettoyage structurel avant rendu (préserve le template)
         if (!['SELECT', 'DATALIST', 'OPTGROUP'].includes(el.tagName)) {
-            const template = el.firstElementChild;
+            const template = el.querySelector(':scope > template');
             while (el.lastElementChild && el.lastElementChild !== template) {
                 el.removeChild(el.lastElementChild);
             }
@@ -237,48 +220,49 @@ const render = (container, contextNode = document.model.dom) => {
         // CAS 1 : EACH (Itération)
         if (eachPath) {
             const collection = evaluateXPath(eachPath, contextNode);
-            
-            if (Array.isArray(collection) && collection.length > 0) {
+            if (Array.isArray(collection)) {
+                // L'élément porteur (ex: <ul>) garde le contexte parent pour resolveContext
+                el._boundNode = contextNode; 
+                
                 collection.forEach(itemNode => {
                     const clone = el.modelTemplate.cloneNode(true);
-                    const wrapper = document.createElement('div'); 
+                    const wrapper = document.createElement('div');
                     wrapper.appendChild(clone);
                     
-                    // Rendu récursif : le clone prend l'item XML comme contexte
+                    // Rendu récursif : les enfants du clone utiliseront itemNode comme contexte
                     render(wrapper, itemNode);
                     
                     while (wrapper.firstChild) {
                         const child = wrapper.firstChild;
-                        if (child.nodeType === 1) child._XPathContext = itemNode;
+                        if (child.nodeType === 1) child._boundNode = itemNode;
                         el.appendChild(child);
                     }
                 });
-                return;
+            }
+        } 
+        // CAS 2 : REF (Mapping simple ou complexe)
+        else if (refPath) {
+            const target = evaluateXPath(refPath, contextNode);
+            if (target instanceof Node) {
+                // Si c'est un nœud avec une structure descendante
+                if (target.nodeType === 1 && (target.childElementCount > 0 || target.attributes.length > 0)) {
+                    el._boundNode = target; // Devient l'ancre pour les enfants
+                    const clone = el.modelTemplate.cloneNode(true);
+                    const wrapper = document.createElement('div');
+                    wrapper.appendChild(clone);
+                    
+                    render(wrapper, target);
+                    
+                    while (wrapper.firstChild) {
+                        const child = wrapper.firstChild;
+                        if (child.nodeType === 1) child._boundNode = target;
+                        el.appendChild(child);
+                    }
+                } else {
+                    // Sinon, synchronisation de valeur simple
+                    el.bindNode(target);
+                }
             }
         }
-
-        // CAS 2 : REF (ou Fallback de EACH)
-		if (refPath) {
-			const target = evaluateXPath(refPath, contextNode);
-			
-			// Si c'est un ÉLÉMENT XML (Nœud complexe avec enfants/attributs)
-			if (target instanceof Node && target.nodeType === 1 && (target.childElementCount > 0 || target.attributes.length > 0)) {
-				const clone = el.modelTemplate.cloneNode(true); // Utilise votre nouveau nom
-				const wrapper = document.createElement('div');
-				wrapper.appendChild(clone);
-				
-				render(wrapper, target);
-				
-				while (wrapper.firstChild) {
-					const child = wrapper.firstChild;
-					if (child.nodeType === 1) child._XPathContext = target;
-					el.appendChild(child);
-				}
-			} 
-			// Si c'est un scalaire ou un nœud terminal
-			else if (target) {
-				el.bindNode(target);
-			}
-		}
     });
 };
