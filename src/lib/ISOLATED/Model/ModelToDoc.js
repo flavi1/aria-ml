@@ -6,6 +6,21 @@
 const XMLToHTML = new Map();
 
 /**
+ * Nettoie récursivement les liaisons des nœuds supprimés
+ */
+const cleanupBindings = (xmlNode) => {
+    if (xmlNode.nodeType === 1) { // Element
+        XMLToHTML.delete(xmlNode);
+        // Nettoyage des attributs
+        Array.from(xmlNode.attributes).forEach(attr => XMLToHTML.delete(attr));
+        // Nettoyage des enfants
+        Array.from(xmlNode.childNodes).forEach(cleanupBindings);
+    } else {
+        XMLToHTML.delete(xmlNode);
+    }
+};
+
+/**
  * Lie un élément HTML à un nœud XML de façon bidirectionnelle
  */
 HTMLElement.prototype.bindNode = function(xmlNode) {
@@ -44,38 +59,55 @@ const xmlToDocObserver = new MutationObserver((mutations) => {
 	console.log('## [Observer] ModelToDoc', document.model.sync.ModelToDoc);
     if (!document.model.sync.ModelToDoc) return;
     
-    document.model.sync.DocToModel = false;
+	document.model.sync.DocToModel = false;
 
     mutations.forEach(mutation => {
-        // A. MUTATION D'ATTRIBUT (@done, @id, etc.)
+        // CAS : RESET GLOBAL (Si le modèle entier est remplacé)
+        if (mutation.target === document.model || mutation.target.tagName === 'MODEL') {
+            XMLToHTML.clear();
+            render(document.querySelector('aria-ml') || document.body);
+            return;
+        }
+
+        // A. MUTATION D'ATTRIBUT
         if (mutation.type === 'attributes') {
-            // On récupère le nœud Attr (nodeType 2) pour matcher la liaison
             const attrNode = mutation.target.getAttributeNode(mutation.attributeName);
-            if (attrNode) {
-                updateLinkedElements(attrNode);
-            }
+            if (attrNode) updateLinkedElements(attrNode);
         } 
         
-        // B. MUTATION DE TEXTE (textContent / innerHTML)
+        // B. MUTATION DE TEXTE
         else if (mutation.type === 'characterData') {
-            // Ici, on remonte au parent (l'Element) car c'est lui qui est bindé
             updateLinkedElements(mutation.target.parentNode);
         } 
         
-        // C. MUTATION STRUCTURELLE (Ajout/Suppression de tâches)
+        // C. MUTATION STRUCTURELLE (Add/Remove)
         else if (mutation.type === 'childList') {
+            // 1. Nettoyage des nœuds supprimés
+            mutation.removedNodes.forEach(cleanupBindings);
+
             const isStructural = Array.from(mutation.addedNodes)
                 .concat(Array.from(mutation.removedNodes))
                 .some(n => n.nodeType === 1);
 
             if (isStructural) {
-                // On rafraîchit le conteneur lié au parent du changement (ex: <ul> pour <tasks>)
-                const containers = XMLToHTML.get(mutation.target);
+                // 2. Stratégie de remontée : on cherche le conteneur HTML lié au parent
+                let currentXML = mutation.target;
+                let containers = null;
+
+                // On remonte l'arbre XML jusqu'à trouver un élément HTML qui l'observe (ex: le <ul> du "each")
+                while (currentXML && currentXML !== document.model) {
+                    containers = XMLToHTML.get(currentXML);
+                    if (containers && containers.size > 0) break;
+                    currentXML = currentXML.parentNode;
+                }
+
                 if (containers) {
-                    containers.forEach(c => render(c, mutation.target));
+                    containers.forEach(c => render(c, currentXML));
+                } else {
+                    // Fallback ultime : re-render global si aucune attache n'est trouvée
+                    render(document.querySelector('aria-ml') || document.body);
                 }
             } else {
-                // Simple mise à jour de texte via changement de nœud texte
                 updateLinkedElements(mutation.target);
             }
         }
@@ -119,12 +151,11 @@ const syncNodeValue = (el, boundNode) => {
             if (el.checked !== isChecked) el.checked = isChecked;
         } 
         else {
-            // Protection du curseur utilisateur pour les champs texte
-            if (document.activeElement !== el) el.value = val;
+            if (el.value !== val) el.value = val;
         }
     } 
     else if (el.tagName === 'TEXTAREA') {
-        if (document.activeElement !== el) el.value = val;
+        if (el.value !== val) el.value = val;
     } 
     else if (el.tagName === 'SELECT') {
         el.value = val;
@@ -196,9 +227,11 @@ const render = (container, contextNode = document.model.dom) => {
         el._XPathContext = contextNode;
 
         // Nettoyage (on préserve le premier enfant <template>)
-        const template = el.firstElementChild;
-        while (el.lastElementChild && el.lastElementChild !== template) {
-            el.removeChild(el.lastElementChild);
+        if (!['SELECT', 'DATALIST', 'OPTGROUP'].includes(el.tagName)) {
+            const template = el.firstElementChild;
+            while (el.lastElementChild && el.lastElementChild !== template) {
+                el.removeChild(el.lastElementChild);
+            }
         }
 
         // CAS 1 : EACH (Itération)
